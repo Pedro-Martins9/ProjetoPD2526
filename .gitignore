@@ -1,0 +1,6 @@
+.agent/rules/project-requirements-and-restrictions.md
+.vscode/settings.json
+server1.db
+server2.db
+target/maven-status/maven-compiler-plugin/compile/default-compile/createdFiles.lst
+target/maven-status/maven-compiler-plugin/compile/default-compile/inputFiles.lst
