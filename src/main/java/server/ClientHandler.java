@@ -158,6 +158,11 @@ public class ClientHandler implements Runnable {
         long startTime = parseDateToTimestamp(startTimeStr);
         long endTime = parseDateToTimestamp(endTimeStr);
 
+        if (endTime <= startTime) {
+            System.out.println("Validation failed: End time must be after start time.");
+            return new Message(Message.Type.CREATE_QUESTION_RESPONSE, false);
+        }
+
         String query = String.format(
                 "INSERT INTO questions (prompt, options, correct_option, start_time, end_time, access_code, creator_email) VALUES ('%s', '%s', %s, %d, %d, '%s', '%s')",
                 prompt, options, correctOption, startTime, endTime, accessCode, creatorEmail);

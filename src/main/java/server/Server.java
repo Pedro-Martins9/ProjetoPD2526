@@ -150,11 +150,11 @@ public class Server {
         }
     }
 
-    @SuppressWarnings("deprecation")
     private void listenMulticast() {
         try (MulticastSocket socket = new MulticastSocket(Constants.MULTICAST_PORT)) {
             InetAddress group = InetAddress.getByName(Constants.MULTICAST_GROUP);
-            socket.joinGroup(group);
+            NetworkInterface netIf = NetworkInterface.getByInetAddress(InetAddress.getLocalHost());
+            socket.joinGroup(new InetSocketAddress(group, Constants.MULTICAST_PORT), netIf);
 
             byte[] buffer = new byte[4096];
             while (running.get()) {
@@ -162,11 +162,6 @@ public class Server {
                 socket.receive(packet);
 
                 String msg = new String(packet.getData(), 0, packet.getLength());
-                // Check if it's a DB update
-                // "When the Primary updates the DB, it broadcasts a heartbeat containing the
-                // SQL query and the new version number"
-                // Format could be: UPDATE <version> <sql_query>
-
                 if (msg.startsWith("UPDATE")) {
                     handleDbUpdate(msg);
                 }
@@ -199,9 +194,16 @@ public class Server {
                 dbManager.executeUpdate(sql); // This increments local version
             } else if (version > localVersion + 1) {
                 System.err.println("Missed updates! Local: " + localVersion + ", Remote: " + version);
-                // Terminate or request full sync
-                running.set(false);
-                System.exit(1);
+                System.out.println("Requesting full sync from Primary...");
+
+                // Find primary again (or assume we know it, but getting fresh info is safer)
+                String primaryInfo = getPrimaryFromDirectory();
+                if (primaryInfo != null && !primaryInfo.equals("NO_SERVERS")) {
+                    String[] parts = primaryInfo.split(" ");
+                    String ip = parts[1];
+                    int syncPort = Integer.parseInt(parts[3]);
+                    syncDatabase(ip, syncPort);
+                }
             }
         } catch (Exception e) {
             e.printStackTrace();

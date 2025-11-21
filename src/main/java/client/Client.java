@@ -290,7 +290,7 @@ public class Client {
                     break;
                 System.out.println("Index out of bounds.");
             } catch (NumberFormatException e) {
-                System.out.println("Invalid number.");
+                System.out.println("Invalid number. Please enter a digit.");
             }
         }
 
@@ -399,8 +399,19 @@ public class Client {
                 System.out.println(i + ": " + options[i].trim());
             }
 
-            System.out.print("Your Answer (Index): ");
-            String answerIndex = scanner.nextLine();
+            String answerIndex;
+            while (true) {
+                System.out.print("Your Answer (Index): ");
+                answerIndex = scanner.nextLine();
+                try {
+                    int idx = Integer.parseInt(answerIndex);
+                    if (idx >= 0 && idx < options.length)
+                        break;
+                    System.out.println("Index out of bounds.");
+                } catch (NumberFormatException e) {
+                    System.out.println("Invalid number. Please enter a digit.");
+                }
+            }
 
             // 2. Submit Answer
             Message submitResponse = sendRequest(
