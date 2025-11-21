@@ -1,32 +1,37 @@
 package client;
 
-import common.Constants;
 import common.Message;
-import java.io.*;
-import java.net.*;
-import java.util.List;
-import java.util.Scanner;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
+import java.util.Scanner;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 
-public class Client {
-    private Socket socket;
-    private ObjectOutputStream out;
-    private ObjectInputStream in;
+public class ClientUI {
+    private ClientCommunication comm;
     private Scanner scanner = new Scanner(System.in);
     private boolean running = true;
     private String userEmail = null;
     private String userRole = null;
 
+    // Queue to handle synchronous responses while allowing async notifications
+    private BlockingQueue<Message> responseQueue = new LinkedBlockingQueue<>();
+
     public static void main(String[] args) {
-        new Client().start();
+        new ClientUI().start();
     }
 
     public void start() {
-        if (!connectToServer()) {
-            System.out.println("Failed to connect to any server. Exiting.");
+        comm = new ClientCommunication(this);
+        if (!comm.connect()) {
+            System.out.println("Failed to connect to server.");
             return;
         }
+
+        System.out.println("Connected to server.");
 
         while (running) {
             if (userEmail == null) {
@@ -39,101 +44,48 @@ public class Client {
                 }
             }
         }
+        comm.close();
     }
 
-    private boolean connectToServer() {
+    // Callback from Communication Layer
+    public void handleMessage(Message msg) {
+        // If it's a notification (no request ID logic for now, assuming types)
+        // Ideally we'd separate async events from request responses.
+        // For this simple protocol, we'll assume everything is a response unless
+        // specified.
+
+        // In a real async system, we'd check msg.getType()
+        // If it's NEW_QUESTION, print immediately.
+        // If it's LOGIN_RESPONSE, put in queue.
+
+        // Since the protocol is simple request-response, we put everything in queue
+        // EXCEPT explicit notifications if we add them later.
+        responseQueue.offer(msg);
+    }
+
+    public void onConnectionLost() {
+        System.out.println("\nConnection lost. Attempting to reconnect...");
+        comm.reconnect();
+    }
+
+    public void onReconnected() {
+        System.out.println("Reconnected!");
+    }
+
+    public void onFatalError(String msg) {
+        System.out.println("Fatal Error: " + msg);
+        running = false;
+        System.exit(1);
+    }
+
+    private Message sendRequestAndWait(Message req) {
+        comm.sendRequest(req);
         try {
-            InetSocketAddress primary = getPrimaryServer();
-            if (primary == null) {
-                System.out.println("Could not find a server.");
-                return false;
-            }
-
-            System.out.println("Connecting to " + primary);
-            socket = new Socket(primary.getAddress(), primary.getPort());
-            out = new ObjectOutputStream(socket.getOutputStream());
-            in = new ObjectInputStream(socket.getInputStream());
-            System.out.println("Connected!");
-            return true;
-
-        } catch (Exception e) {
-            System.out.println("Connection failed: " + e.getMessage());
-            return false;
+            // Wait for response
+            return responseQueue.take();
+        } catch (InterruptedException e) {
+            return null;
         }
-    }
-
-    private boolean reconnect() {
-        System.out.println("Attempting to reconnect...");
-        try {
-            if (socket != null)
-                socket.close();
-        } catch (IOException e) {
-            // Ignore
-        }
-
-        int retries = 0;
-        while (retries < 5) {
-            try {
-                Thread.sleep(2000); // Wait before retrying
-                InetSocketAddress primary = getPrimaryServer();
-                if (primary != null) {
-                    socket = new Socket(primary.getAddress(), primary.getPort());
-                    out = new ObjectOutputStream(socket.getOutputStream());
-                    in = new ObjectInputStream(socket.getInputStream());
-                    System.out.println("Reconnected to " + primary);
-                    return true;
-                }
-            } catch (Exception e) {
-                System.out.println("Reconnect attempt " + (retries + 1) + " failed: " + e.getMessage());
-            }
-            retries++;
-        }
-        System.out.println("Could not reconnect to any server.");
-        return false;
-    }
-
-    private Message sendRequest(Message request) {
-        while (true) {
-            try {
-                if (socket == null || socket.isClosed()) {
-                    throw new IOException("Socket closed");
-                }
-                out.writeObject(request);
-                out.flush();
-                return (Message) in.readObject();
-            } catch (IOException | ClassNotFoundException e) {
-                System.out.println("Connection lost (" + e.getMessage() + "). Reconnecting...");
-                if (!reconnect()) {
-                    return null;
-                }
-                // Loop will retry sending the request
-            }
-        }
-    }
-
-    private InetSocketAddress getPrimaryServer() {
-        try (DatagramSocket socket = new DatagramSocket()) {
-            socket.setSoTimeout(5000);
-            String msg = "GET_SERVER";
-            byte[] data = msg.getBytes();
-            DatagramPacket packet = new DatagramPacket(
-                    data, data.length, InetAddress.getByName("localhost"), Constants.DIRECTORY_SERVICE_UDP_PORT);
-            socket.send(packet);
-
-            byte[] buffer = new byte[1024];
-            DatagramPacket response = new DatagramPacket(buffer, buffer.length);
-            socket.receive(response);
-
-            String res = new String(response.getData(), 0, response.getLength());
-            if (res.startsWith("SERVER")) {
-                String[] parts = res.split(" ");
-                return new InetSocketAddress(parts[1], Integer.parseInt(parts[2]));
-            }
-        } catch (Exception e) {
-            // e.printStackTrace(); // Suppress stack trace for cleaner output during
-            // retries
-        }
-        return null;
     }
 
     private void showLoginMenu() {
@@ -165,7 +117,8 @@ public class Client {
         System.out.print("Password: ");
         String password = scanner.nextLine();
 
-        Message response = sendRequest(new Message(Message.Type.LOGIN_REQUEST, new String[] { email, password }));
+        Message response = sendRequestAndWait(
+                new Message(Message.Type.LOGIN_REQUEST, new String[] { email, password }));
 
         if (response != null && response.getType() == Message.Type.LOGIN_RESPONSE
                 && response.getContent() instanceof String) {
@@ -197,7 +150,7 @@ public class Client {
             extra = scanner.nextLine();
         }
 
-        Message response = sendRequest(
+        Message response = sendRequestAndWait(
                 new Message(Message.Type.REGISTER_REQUEST, new String[] { name, email, password, type, extra }));
 
         if (response != null && response.getType() == Message.Type.REGISTER_RESPONSE
@@ -234,34 +187,8 @@ public class Client {
         }
     }
 
-    private void exportCsv() {
-        System.out.println("\n--- EXPORT CSV ---");
-        System.out.print("Access Code: ");
-        String accessCode = scanner.nextLine();
-
-        Message response = sendRequest(new Message(Message.Type.EXPORT_CSV, accessCode));
-
-        if (response != null && response.getType() == Message.Type.EXPORT_CSV_RESPONSE) {
-            String csvContent = (String) response.getContent();
-            if (csvContent == null) {
-                System.out.println("Question not found or no answers available.");
-            } else {
-                String filename = "export_" + accessCode + ".csv";
-                try (FileWriter fw = new FileWriter(filename)) {
-                    fw.write(csvContent);
-                    System.out.println("CSV exported successfully to " + filename);
-                } catch (IOException e) {
-                    System.out.println("Failed to write CSV file: " + e.getMessage());
-                }
-            }
-        } else {
-            System.out.println("Failed to export CSV.");
-        }
-    }
-
     private void createQuestion() {
         System.out.println("\n--- CREATE QUESTION ---");
-
         String prompt;
         while (true) {
             System.out.print("Prompt: ");
@@ -308,11 +235,10 @@ public class Client {
             System.out.print("End Time (YYYY-MM-DD HH:MM): ");
             endTime = scanner.nextLine();
             if (isValidDate(endTime)) {
-                if (isEndDateAfterStartDate(startTime, endTime)) {
+                if (isEndDateAfterStartDate(startTime, endTime))
                     break;
-                } else {
+                else
                     System.out.println("End time must be after start time.");
-                }
             } else {
                 System.out.println("Invalid format. Use YYYY-MM-DD HH:MM");
             }
@@ -321,7 +247,7 @@ public class Client {
         String accessCode = String.valueOf((int) (Math.random() * 9000) + 1000);
         System.out.println("Generated Access Code: " + accessCode);
 
-        Message response = sendRequest(new Message(Message.Type.CREATE_QUESTION, new String[] {
+        Message response = sendRequestAndWait(new Message(Message.Type.CREATE_QUESTION, new String[] {
                 prompt, options, correctOption, startTime, endTime, accessCode, userEmail
         }));
 
@@ -333,31 +259,39 @@ public class Client {
         }
     }
 
-    private boolean isValidDate(String date) {
-        return date.matches("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}");
-    }
-
-    private boolean isEndDateAfterStartDate(String start, String end) {
-        try {
-            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
-            LocalDateTime startDate = LocalDateTime.parse(start, formatter);
-            LocalDateTime endDate = LocalDateTime.parse(end, formatter);
-            return endDate.isAfter(startDate);
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
     private void listQuestions() {
-        Message response = sendRequest(new Message(Message.Type.LIST_QUESTIONS, null));
-
+        Message response = sendRequestAndWait(new Message(Message.Type.LIST_QUESTIONS, null));
         if (response != null && response.getType() == Message.Type.LIST_QUESTIONS_RESPONSE) {
             @SuppressWarnings("unchecked")
             List<String> questions = (List<String>) response.getContent();
             System.out.println("\n--- QUESTIONS ---");
-            for (String q : questions) {
+            for (String q : questions)
                 System.out.println(q);
+        }
+    }
+
+    private void exportCsv() {
+        System.out.println("\n--- EXPORT CSV ---");
+        System.out.print("Access Code: ");
+        String accessCode = scanner.nextLine();
+
+        Message response = sendRequestAndWait(new Message(Message.Type.EXPORT_CSV, accessCode));
+
+        if (response != null && response.getType() == Message.Type.EXPORT_CSV_RESPONSE) {
+            String csvContent = (String) response.getContent();
+            if (csvContent == null) {
+                System.out.println("Question not found or no answers available.");
+            } else {
+                String filename = "export_" + accessCode + ".csv";
+                try (FileWriter fw = new FileWriter(filename)) {
+                    fw.write(csvContent);
+                    System.out.println("CSV exported successfully to " + filename);
+                } catch (IOException e) {
+                    System.out.println("Failed to write CSV file: " + e.getMessage());
+                }
             }
+        } else {
+            System.out.println("Failed to export CSV.");
         }
     }
 
@@ -384,8 +318,7 @@ public class Client {
         System.out.print("Access Code: ");
         String accessCode = scanner.nextLine();
 
-        // 1. Get Question
-        Message response = sendRequest(new Message(Message.Type.GET_QUESTION, accessCode));
+        Message response = sendRequestAndWait(new Message(Message.Type.GET_QUESTION, accessCode));
 
         if (response != null && response.getType() == Message.Type.GET_QUESTIONS_RESPONSE
                 && response.getContent() != null) {
@@ -413,8 +346,7 @@ public class Client {
                 }
             }
 
-            // 2. Submit Answer
-            Message submitResponse = sendRequest(
+            Message submitResponse = sendRequestAndWait(
                     new Message(Message.Type.SUBMIT_ANSWER, new String[] { accessCode, answerIndex, userEmail }));
 
             if (submitResponse != null && submitResponse.getType() == Message.Type.SUBMIT_ANSWER_RESPONSE
@@ -425,6 +357,21 @@ public class Client {
             }
         } else {
             System.out.println("Question not found or invalid.");
+        }
+    }
+
+    private boolean isValidDate(String date) {
+        return date.matches("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}");
+    }
+
+    private boolean isEndDateAfterStartDate(String start, String end) {
+        try {
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+            LocalDateTime startDate = LocalDateTime.parse(start, formatter);
+            LocalDateTime endDate = LocalDateTime.parse(end, formatter);
+            return endDate.isAfter(startDate);
+        } catch (Exception e) {
+            return false;
         }
     }
 }

@@ -101,6 +101,13 @@ public class Server {
             if (fileSize > 0) {
                 dbManager.close(); // Close DB to allow overwrite
 
+                // Backup existing DB if exists
+                File currentDb = new File(dbManager.getDbPath());
+                if (currentDb.exists()) {
+                    File backup = new File(dbManager.getDbPath() + ".bak");
+                    currentDb.renameTo(backup);
+                }
+
                 try (FileOutputStream fos = new FileOutputStream(dbManager.getDbPath())) {
                     byte[] buffer = new byte[4096];
                     long totalRead = 0;
@@ -193,17 +200,11 @@ public class Server {
                 System.out.println("Applying update version " + version);
                 dbManager.executeUpdate(sql); // This increments local version
             } else if (version > localVersion + 1) {
-                System.err.println("Missed updates! Local: " + localVersion + ", Remote: " + version);
-                System.out.println("Requesting full sync from Primary...");
-
-                // Find primary again (or assume we know it, but getting fresh info is safer)
-                String primaryInfo = getPrimaryFromDirectory();
-                if (primaryInfo != null && !primaryInfo.equals("NO_SERVERS")) {
-                    String[] parts = primaryInfo.split(" ");
-                    String ip = parts[1];
-                    int syncPort = Integer.parseInt(parts[3]);
-                    syncDatabase(ip, syncPort);
-                }
+                System.err.println(
+                        "Consistency lost! Missed updates (Local: " + localVersion + ", Remote: " + version + ").");
+                System.err.println("Shutting down as per consistency requirements.");
+                running.set(false);
+                System.exit(1);
             }
         } catch (Exception e) {
             e.printStackTrace();
