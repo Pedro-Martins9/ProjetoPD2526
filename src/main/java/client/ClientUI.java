@@ -11,13 +11,13 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 
 public class ClientUI {
-    private ClientCommunication comm;
-    private Scanner scanner = new Scanner(System.in);
+    private ClientCommunication comm; // instancia da camada de comunicação
+    private Scanner scanner = new Scanner(System.in); // scanner para ler comandos do terminal
     private boolean running = true;
-    private String userEmail = null;
-    private String userRole = null;
+    private String userEmail = null; // email do utilizador atual
+    private String userRole = null; // student ou teacher
 
-    // Queue to handle synchronous responses while allowing async notifications
+    // blocking queue para poder esperar por respostas antes de enviar novos pedidos
     private BlockingQueue<Message> responseQueue = new LinkedBlockingQueue<>();
 
     public static void main(String[] args) {
@@ -25,19 +25,19 @@ public class ClientUI {
     }
 
     public void start() {
-        comm = new ClientCommunication(this);
+        comm = new ClientCommunication(this); //instancia a camada de comunicação
         if (!comm.connect()) {
-            System.out.println("Failed to connect to server.");
+            System.out.println("Nao foi possivel conectar ao servidor.");
             return;
         }
 
-        System.out.println("Connected to server.");
+        System.out.println("Conexao estabelecida com o servidor.");
 
-        while (running) {
+        while (running) { // loop principal do UI
             if (userEmail == null) {
                 showLoginMenu();
             } else {
-                if ("TEACHER".equals(userRole)) {
+                if ("PROFESSOR".equalsIgnoreCase(userRole)) {
                     showTeacherMenu();
                 } else {
                     showStudentMenu();
@@ -47,42 +47,31 @@ public class ClientUI {
         comm.close();
     }
 
-    // Callback from Communication Layer
+    // recebe mensagens do ClientCommunication
     public void handleMessage(Message msg) {
-        // If it's a notification (no request ID logic for now, assuming types)
-        // Ideally we'd separate async events from request responses.
-        // For this simple protocol, we'll assume everything is a response unless
-        // specified.
-
-        // In a real async system, we'd check msg.getType()
-        // If it's NEW_QUESTION, print immediately.
-        // If it's LOGIN_RESPONSE, put in queue.
-
-        // Since the protocol is simple request-response, we put everything in queue
-        // EXCEPT explicit notifications if we add them later.
+        // Adiciona qualquer mensagens à queue de respostas para ser processado posteriormente
         responseQueue.offer(msg);
     }
 
     public void onConnectionLost() {
-        System.out.println("\nConnection lost. Attempting to reconnect...");
+        System.out.println("\nConexao perdida. A tentar reconectar...");
         comm.reconnect();
     }
 
     public void onReconnected() {
-        System.out.println("Reconnected!");
+        System.out.println("Conexao estabelecida");
     }
 
     public void onFatalError(String msg) {
-        System.out.println("Fatal Error: " + msg);
-        running = false;
+        System.out.println("Erro fatal: " + msg);
+        running = false; //termina o loop principal
         System.exit(1);
     }
 
-    private Message sendRequestAndWait(Message req) {
+    private Message sendRequestAndWait(Message req) { // envia pedido e espera pela resposta
         comm.sendRequest(req);
         try {
-            // Wait for response
-            return responseQueue.take();
+            return responseQueue.take(); // espera até receber uma resposta
         } catch (InterruptedException e) {
             return null;
         }
@@ -91,11 +80,11 @@ public class ClientUI {
     private void showLoginMenu() {
         System.out.println("\n--- LOGIN ---");
         System.out.println("1. Login");
-        System.out.println("2. Register");
-        System.out.println("0. Exit");
+        System.out.println("2. Registar");
+        System.out.println("0. Fechar");
         System.out.print("Option: ");
 
-        String opt = scanner.nextLine();
+        String opt = scanner.nextLine(); // obtem resposta do utilizador
         switch (opt) {
             case "1":
                 login();
@@ -107,65 +96,67 @@ public class ClientUI {
                 running = false;
                 break;
             default:
-                System.out.println("Invalid option");
+                System.out.println("Digita uma opcao valida (1, 2 ou 0).");
         }
     }
 
-    private void login() {
+    private void login() { // obtem detalhes e realiza login do utilizador
         System.out.print("Email: ");
         String email = scanner.nextLine();
         System.out.print("Password: ");
         String password = scanner.nextLine();
 
-        Message response = sendRequestAndWait(
-                new Message(Message.Type.LOGIN_REQUEST, new String[] { email, password }));
+        Message response = sendRequestAndWait( // envia pedido de login e espera pela resposta
+                new Message(Message.Type.LOGIN_REQUEST, new String[] { email, password })); // cria nova mensagem de login com email e password
 
         if (response != null && response.getType() == Message.Type.LOGIN_RESPONSE
-                && response.getContent() instanceof String) {
+                && response.getContent() instanceof String) { // se a resposta for válida, de login e for uma string
             userRole = (String) response.getContent();
             userEmail = email;
-            System.out.println("Login successful as " + userRole);
+            System.out.println("Login realizado como " + userRole);
         } else {
-            System.out.println("Login failed.");
+            System.out.println("Falha no login.");
         }
     }
 
     private void register() {
-        System.out.println("Register as: 1. Student, 2. Teacher");
-        String type = scanner.nextLine().equals("2") ? "TEACHER" : "STUDENT";
+        System.out.println("Registar como: 1. Estudante, 2. Professor"); // obtem o tipo de utilizador
+        String type = scanner.nextLine().equalsIgnoreCase("2") ? "Professor" : "Estudante";
 
-        System.out.print("Name: ");
+        // obtem detalhes do utilizador
+        System.out.print("Nome: ");
         String name = scanner.nextLine();
         System.out.print("Email: ");
         String email = scanner.nextLine();
         System.out.print("Password: ");
         String password = scanner.nextLine();
 
-        String extra = "";
-        if ("TEACHER".equals(type)) {
-            System.out.print("Teacher Code: ");
+        String extra = ""; // obtem informação extra dependendo do tipo de utilizador codigo de professor ou numero de estudante
+        if ("Professor".equalsIgnoreCase(type)) {
+            System.out.print("Codigo de Professor: ");
             extra = scanner.nextLine();
         } else {
-            System.out.print("Student ID: ");
+            System.out.print("Numero de estudante: ");
             extra = scanner.nextLine();
         }
 
-        Message response = sendRequestAndWait(
+        Message response = sendRequestAndWait( // envia pedido de registo e espera pela resposta
                 new Message(Message.Type.REGISTER_REQUEST, new String[] { name, email, password, type, extra }));
+                // cria nova mensagem de registo com os detalhes do utilizador
 
         if (response != null && response.getType() == Message.Type.REGISTER_RESPONSE
                 && (boolean) response.getContent()) {
-            System.out.println("Registration successful!");
+            System.out.println("Registado!");
         } else {
-            System.out.println("Registration failed.");
+            System.out.println("Erro ao realizar registro.");
         }
     }
 
     private void showTeacherMenu() {
-        System.out.println("\n--- TEACHER MENU ---");
-        System.out.println("1. Create Question");
-        System.out.println("2. List Questions");
-        System.out.println("3. Export CSV");
+        System.out.println("\n--- MENU PROFESSOR ---");
+        System.out.println("1. Criar pergunta");
+        System.out.println("2. Listar perguntas");
+        System.out.println("3. Exportar CSV");
         System.out.println("0. Logout");
 
         String opt = scanner.nextLine();
@@ -181,71 +172,72 @@ public class ClientUI {
                 break;
             case "0":
                 userEmail = null;
+                userRole = null;
                 break;
             default:
-                System.out.println("Invalid option");
+                System.out.println("Digita uma opcao valida (1, 2, 3 ou 0).");
         }
     }
 
     private void createQuestion() {
-        System.out.println("\n--- CREATE QUESTION ---");
+        System.out.println("\n--- Criar Pergunta ---");
         String prompt;
         while (true) {
-            System.out.print("Prompt: ");
+            System.out.print("Pergunta: ");
             prompt = scanner.nextLine();
             if (!prompt.trim().isEmpty())
                 break;
-            System.out.println("Prompt cannot be empty.");
+            System.out.println("Digita uma pergunta");
         }
 
         String options;
         while (true) {
-            System.out.print("Options (comma separated, at least 2): ");
+            System.out.print("Opcoes (pelo menos duas separadas por , ): ");
             options = scanner.nextLine();
             if (options.split(",").length >= 2)
                 break;
-            System.out.println("Please provide at least 2 options.");
+            System.out.println("Digita pelo menos duas opcoes.");
         }
 
         String correctOption;
         while (true) {
-            System.out.print("Correct Option Index (0-based): ");
+            System.out.print("Indice da resposta correta (inicia com 0): ");
             correctOption = scanner.nextLine();
             try {
                 int idx = Integer.parseInt(correctOption);
                 if (idx >= 0 && idx < options.split(",").length)
                     break;
-                System.out.println("Index out of bounds.");
+                System.out.println("Indice invalido");
             } catch (NumberFormatException e) {
-                System.out.println("Invalid number. Please enter a digit.");
+                System.out.println("Input invalido, digita um numero.");
             }
         }
 
         String startTime;
         while (true) {
-            System.out.print("Start Time (YYYY-MM-DD HH:MM): ");
+            System.out.print("Data e hora de inicio (YYYY-MM-DD HH:MM): ");
             startTime = scanner.nextLine();
-            if (isValidDate(startTime))
+            if (isValidDate(startTime)) // verifica se o formato é válido
                 break;
-            System.out.println("Invalid format. Use YYYY-MM-DD HH:MM");
+            System.out.println("Formato invalido. Digita YYYY-MM-DD HH:MM");
         }
 
         String endTime;
         while (true) {
-            System.out.print("End Time (YYYY-MM-DD HH:MM): ");
+            System.out.print("Data e hora do fim (YYYY-MM-DD HH:MM): ");
             endTime = scanner.nextLine();
-            if (isValidDate(endTime)) {
-                if (isEndDateAfterStartDate(startTime, endTime))
+            if (isValidDate(endTime)) { // verifica se o formato é válido
+                if (isEndDateAfterStartDate(startTime, endTime)) // verifica se a data de fim é depois da data de inicio
                     break;
                 else
-                    System.out.println("End time must be after start time.");
+                    System.out.println("Data de fim deve ser depois da data de inicio.");
             } else {
-                System.out.println("Invalid format. Use YYYY-MM-DD HH:MM");
+                System.out.println("Formato invalido. Digita YYYY-MM-DD HH:MM");
             }
         }
 
-        String accessCode = String.valueOf((int) (Math.random() * 9000) + 1000);
-        System.out.println("Generated Access Code: " + accessCode);
+        String accessCode = String.valueOf((int) (Math.random() * 9000) + 1000); // gera um código de acesso aleatório de 4 dígitos
+        System.out.println("Codigo da pergunta: " + accessCode);
 
         Message response = sendRequestAndWait(new Message(Message.Type.CREATE_QUESTION, new String[] {
                 prompt, options, correctOption, startTime, endTime, accessCode, userEmail
@@ -253,9 +245,9 @@ public class ClientUI {
 
         if (response != null && response.getType() == Message.Type.CREATE_QUESTION_RESPONSE
                 && (boolean) response.getContent()) {
-            System.out.println("Question created successfully!");
+            System.out.println("Pergunta criada!");
         } else {
-            System.out.println("Failed to create question.");
+            System.out.println("Erro ao criar a pergunta.");
         }
     }
 
@@ -264,15 +256,15 @@ public class ClientUI {
         if (response != null && response.getType() == Message.Type.LIST_QUESTIONS_RESPONSE) {
             @SuppressWarnings("unchecked")
             List<String> questions = (List<String>) response.getContent();
-            System.out.println("\n--- QUESTIONS ---");
+            System.out.println("\n--- Perguntas ---");
             for (String q : questions)
                 System.out.println(q);
         }
     }
 
     private void exportCsv() {
-        System.out.println("\n--- EXPORT CSV ---");
-        System.out.print("Access Code: ");
+        System.out.println("\n--- EXPORTAR CSV ---");
+        System.out.print("Codigo da pergunta: ");
         String accessCode = scanner.nextLine();
 
         Message response = sendRequestAndWait(new Message(Message.Type.EXPORT_CSV, accessCode));
@@ -280,24 +272,24 @@ public class ClientUI {
         if (response != null && response.getType() == Message.Type.EXPORT_CSV_RESPONSE) {
             String csvContent = (String) response.getContent();
             if (csvContent == null) {
-                System.out.println("Question not found or no answers available.");
+                System.out.println("Pergunta nao encontrada.");
             } else {
-                String filename = "export_" + accessCode + ".csv";
+                String filename = "exportado_" + accessCode + ".csv";
                 try (FileWriter fw = new FileWriter(filename)) {
                     fw.write(csvContent);
-                    System.out.println("CSV exported successfully to " + filename);
+                    System.out.println("Ficheiro CSV exportado: " + filename);
                 } catch (IOException e) {
-                    System.out.println("Failed to write CSV file: " + e.getMessage());
+                    System.out.println("Erro ao criar ficheiro CSV: " + e.getMessage());
                 }
             }
         } else {
-            System.out.println("Failed to export CSV.");
+            System.out.println("Erro ao exportar o ficheiro CSV.");
         }
     }
 
     private void showStudentMenu() {
-        System.out.println("\n--- STUDENT MENU ---");
-        System.out.println("1. Answer Question");
+        System.out.println("\n--- MENU ESTUDANTE ---");
+        System.out.println("1. Responder a pergunta");
         System.out.println("0. Logout");
 
         String opt = scanner.nextLine();
@@ -309,13 +301,13 @@ public class ClientUI {
                 userEmail = null;
                 break;
             default:
-                System.out.println("Invalid option");
+                System.out.println("Digita uma opcao valida (1 ou 0).");
         }
     }
 
     private void answerQuestion() {
-        System.out.println("\n--- ANSWER QUESTION ---");
-        System.out.print("Access Code: ");
+        System.out.println("\n--- RESPONDER A PERGUNTA ---");
+        System.out.print("Codigo da pergunta: ");
         String accessCode = scanner.nextLine();
 
         Message response = sendRequestAndWait(new Message(Message.Type.GET_QUESTION, accessCode));
@@ -327,22 +319,22 @@ public class ClientUI {
             String optionsStr = data[1];
             String[] options = optionsStr.split(",");
 
-            System.out.println("Question: " + prompt);
+            System.out.println("Pergunta: " + prompt);
             for (int i = 0; i < options.length; i++) {
                 System.out.println(i + ": " + options[i].trim());
             }
 
             String answerIndex;
             while (true) {
-                System.out.print("Your Answer (Index): ");
+                System.out.print("Indice da resposta ( comeca com 0): ");
                 answerIndex = scanner.nextLine();
                 try {
                     int idx = Integer.parseInt(answerIndex);
                     if (idx >= 0 && idx < options.length)
                         break;
-                    System.out.println("Index out of bounds.");
+                    System.out.println("Indice invalido");
                 } catch (NumberFormatException e) {
-                    System.out.println("Invalid number. Please enter a digit.");
+                    System.out.println("Input invalido, digita um numero.");
                 }
             }
 
@@ -351,20 +343,21 @@ public class ClientUI {
 
             if (submitResponse != null && submitResponse.getType() == Message.Type.SUBMIT_ANSWER_RESPONSE
                     && (boolean) submitResponse.getContent()) {
-                System.out.println("Answer submitted successfully!");
+                System.out.println("Resposta submetida!");
             } else {
-                System.out.println("Failed to submit answer.");
+                System.out.println("Erro ao enviar resposta");
             }
         } else {
-            System.out.println("Question not found or invalid.");
+            System.out.println("Pergunta nao encontrada");
         }
     }
 
     private boolean isValidDate(String date) {
         return date.matches("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}");
     }
+    //funçao auxiliar utilizada para verificar se a data é valida
 
-    private boolean isEndDateAfterStartDate(String start, String end) {
+    private boolean isEndDateAfterStartDate(String start, String end) { //funcao auxiliar para verificar se a data de fim é depois da data de inicio
         try {
             DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
             LocalDateTime startDate = LocalDateTime.parse(start, formatter);
