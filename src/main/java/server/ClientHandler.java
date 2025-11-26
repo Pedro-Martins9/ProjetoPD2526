@@ -63,13 +63,19 @@ public class ClientHandler implements Runnable {
                 case CREATE_QUESTION:
                     return handleCreateQuestion((String[]) request.getContent());
                 case LIST_QUESTIONS:
-                    return handleListQuestions();
+                    return handleListQuestions((String) request.getContent());
                 case GET_QUESTION:
                     return handleGetQuestion((String) request.getContent());
                 case SUBMIT_ANSWER:
                     return handleSubmitAnswer((String[]) request.getContent());
                 case EXPORT_CSV:
                     return handleExportCsv((String) request.getContent());
+                case EDIT_QUESTION:
+                    return handleEditQuestion((String[]) request.getContent());
+                case DELETE_QUESTION:
+                    return handleDeleteQuestion((String) request.getContent());
+                case GET_QUESTION_ANSWERS:
+                    return handleGetQuestionAnswers((String) request.getContent());
                 default:
                     return new Message(Message.Type.LOGIN_RESPONSE, null);
             }
@@ -171,22 +177,37 @@ public class ClientHandler implements Runnable {
         return new Message(Message.Type.CREATE_QUESTION_RESPONSE, true);
     }
 
-    private Message handleListQuestions() throws SQLException {
+    private Message handleListQuestions(String filter) throws SQLException {
         String sql = "SELECT * FROM questions";
-        List<String> questions = new ArrayList<>();
 
+
+        if (filter == null) filter = "ALL";
+
+        long now = System.currentTimeMillis() / 1000;
+
+
+        if ("ACTIVE".equals(filter)) {
+            sql += " WHERE start_time <= " + now + " AND end_time >= " + now;
+        } else if ("EXPIRED".equals(filter)) {
+            sql += " WHERE end_time < " + now;
+        } else if ("FUTURE".equals(filter)) {
+            sql += " WHERE start_time > " + now;
+        }
+
+
+        List<String> questions = new ArrayList<>();
         Connection conn = dbManager.getConnection();
         try (PreparedStatement pstmt = conn.prepareStatement(sql);
-                ResultSet rs = pstmt.executeQuery()) {
+             ResultSet rs = pstmt.executeQuery()) {
 
             while (rs.next()) {
                 questions.add(
-                        rs.getString("id") + ": " + rs.getString("prompt") + " (" + rs.getString("access_code") + ")");
+                        rs.getString("id") + ": " + rs.getString("prompt") +
+                                " (" + rs.getString("access_code") + ")");
             }
         }
         return new Message(Message.Type.LIST_QUESTIONS_RESPONSE, questions);
     }
-
     private Message handleGetQuestion(String accessCode) throws SQLException {
         String sql = "SELECT * FROM questions WHERE access_code = ?";
         Connection conn = dbManager.getConnection();
@@ -329,6 +350,124 @@ public class ClientHandler implements Runnable {
         }
 
         return new Message(Message.Type.EXPORT_CSV_RESPONSE, csv.toString());
+    }
+
+    private Message handleDeleteQuestion(String accessCode) throws SQLException {
+        Connection conn = dbManager.getConnection();
+
+        // Obter ID da pergunta
+        int questionId = -1;
+        try (PreparedStatement ps = conn.prepareStatement("SELECT id FROM questions WHERE access_code = ?")) {
+            ps.setString(1, accessCode);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) questionId = rs.getInt("id");
+        }
+
+        if (questionId == -1) return new Message(Message.Type.DELETE_QUESTION_RESPONSE, "Pergunta não encontrada.");
+
+        // Verificar se já tem respostas
+        try (PreparedStatement ps = conn.prepareStatement("SELECT COUNT(*) FROM answers WHERE question_id = ?")) {
+            ps.setInt(1, questionId);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next() && rs.getInt(1) > 0) {
+                return new Message(Message.Type.DELETE_QUESTION_RESPONSE, "Não pode eliminar: A pergunta já tem respostas.");
+            }
+        }
+
+        // Se chegou aqui, pode apagar. Usamos o server.executeUpdate para replicar para o cluster
+        String sql = "DELETE FROM questions WHERE id = " + questionId;
+        server.executeUpdate(sql);
+
+        return new Message(Message.Type.DELETE_QUESTION_RESPONSE, "Pergunta eliminada com sucesso.");
+    }
+
+
+    private Message handleEditQuestion(String[] data) throws SQLException {
+        // Data: [oldAccessCode, prompt, options, correctOption, startTime, endTime]
+        String accessCode = data[0];
+
+        // check existence and if it has answers
+        Connection conn = dbManager.getConnection();
+        int questionId = -1;
+        try (PreparedStatement ps = conn.prepareStatement("SELECT id FROM questions WHERE access_code = ?")) {
+            ps.setString(1, accessCode);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) questionId = rs.getInt("id");
+        }
+
+        if (questionId == -1) return new Message(Message.Type.EDIT_QUESTION_RESPONSE, false);
+
+        try (PreparedStatement ps = conn.prepareStatement("SELECT COUNT(*) FROM answers WHERE question_id = ?")) {
+            ps.setInt(1, questionId);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next() && rs.getInt(1) > 0) {
+                // Return false or mensage of erro
+                return new Message(Message.Type.EDIT_QUESTION_RESPONSE, false);
+            }
+        }
+
+
+        String prompt = escapeSql(data[1]);
+        String options = escapeSql(data[2]);
+        String correctOption = data[3];
+        long start = parseDateToTimestamp(data[4]);
+        long end = parseDateToTimestamp(data[5]);
+
+
+        String sql = String.format(
+                "UPDATE questions SET prompt='%s', options='%s', correct_option=%s, start_time=%d, end_time=%d WHERE id=%d",
+                prompt, options, correctOption, start, end, questionId
+        );
+
+        server.executeUpdate(sql);
+        return new Message(Message.Type.EDIT_QUESTION_RESPONSE, true);
+    }
+
+
+    private Message handleGetQuestionAnswers(String accessCode) throws SQLException {
+        Connection conn = dbManager.getConnection();
+        List<String> report = new ArrayList<>();
+
+        //  Check is it exists and if it is expired
+        int questionId = -1;
+        long endTime = 0;
+        try (PreparedStatement ps = conn.prepareStatement("SELECT id, end_time FROM questions WHERE access_code = ?")) {
+            ps.setString(1, accessCode);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) {
+                questionId = rs.getInt("id");
+                endTime = rs.getLong("end_time");
+            }
+        }
+
+        if (questionId == -1) return new Message(Message.Type.GET_QUESTION_ANSWERS_RESPONSE, null);
+
+
+        long now = System.currentTimeMillis() / 1000;
+        if (System.currentTimeMillis()/1000 < endTime) {
+            report.add("Aviso: A pergunta ainda não expirou.");
+        }
+
+        String sql = "SELECT u.name, u.student_id, a.answer_index FROM answers a " +
+                "JOIN users u ON a.student_email = u.email " +
+                "WHERE a.question_id = ?";
+
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, questionId);
+            ResultSet rs = ps.executeQuery();
+            while(rs.next()) {
+                String line = String.format("Aluno: %s (%s) - Resposta: %s",
+                        rs.getString("name"),
+                        rs.getString("student_id"),
+                        String.valueOf((char)('a' + rs.getInt("answer_index")))
+                );
+                report.add(line);
+            }
+        }
+
+        if (report.isEmpty()) report.add("Sem respostas submetidas.");
+
+        return new Message(Message.Type.GET_QUESTION_ANSWERS_RESPONSE, report);
     }
 
     private String hash(String input) {

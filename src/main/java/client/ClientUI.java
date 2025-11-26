@@ -37,7 +37,7 @@ public class ClientUI {
             if (userEmail == null) {
                 showLoginMenu();
             } else {
-                if ("PROFESSOR".equalsIgnoreCase(userRole)) {
+                if ("TEACHER".equalsIgnoreCase(userRole)) {
                     showTeacherMenu();
                 } else {
                     showStudentMenu();
@@ -121,7 +121,7 @@ public class ClientUI {
 
     private void register() {
         System.out.println("Registar como: 1. Estudante, 2. Professor"); // obtem o tipo de utilizador
-        String type = scanner.nextLine().equalsIgnoreCase("2") ? "Professor" : "Estudante";
+        String type = scanner.nextLine().equalsIgnoreCase("2") ? "TEACHER" : "STUDENT";
 
         // obtem detalhes do utilizador
         System.out.print("Nome: ");
@@ -156,24 +156,21 @@ public class ClientUI {
         System.out.println("\n--- MENU PROFESSOR ---");
         System.out.println("1. Criar pergunta");
         System.out.println("2. Listar perguntas");
-        System.out.println("3. Exportar CSV");
+        System.out.println("3. Editar pergunta");
+        System.out.println("4. Eliminar pergunta");
+        System.out.println("5. Ver Respostas (Relatório)");
+        System.out.println("6. Exportar CSV");
         System.out.println("0. Logout");
 
         String opt = scanner.nextLine();
         switch (opt) {
-            case "1":
-                createQuestion();
-                break;
-            case "2":
-                listQuestions();
-                break;
-            case "3":
-                exportCsv();
-                break;
-            case "0":
-                userEmail = null;
-                userRole = null;
-                break;
+            case "1": createQuestion(); break;
+            case "2": listQuestions(); break;
+            case "3": editQuestion(); break;
+            case "4": deleteQuestion(); break;
+            case "5": showQuestionAnswers(); break;
+            case "6": exportCsv(); break;
+            case "0": userEmail = null; userRole = null; break;
             default:
                 System.out.println("Digita uma opcao valida (1, 2, 3 ou 0).");
         }
@@ -252,13 +249,135 @@ public class ClientUI {
     }
 
     private void listQuestions() {
-        Message response = sendRequestAndWait(new Message(Message.Type.LIST_QUESTIONS, null));
+        System.out.println("Filtro: 1. Todas, 2. Ativas, 3. Expiradas, 4. Futuras");
+        String opt = scanner.nextLine();
+        String filter = "ALL";
+        if (opt.equals("2")) filter = "ACTIVE";
+        else if (opt.equals("3")) filter = "EXPIRED";
+        else if (opt.equals("4")) filter = "FUTURE";
+
+        Message response = sendRequestAndWait(new Message(Message.Type.LIST_QUESTIONS, filter));
         if (response != null && response.getType() == Message.Type.LIST_QUESTIONS_RESPONSE) {
             @SuppressWarnings("unchecked")
             List<String> questions = (List<String>) response.getContent();
+            if (questions.isEmpty()){
+                System.out.println("Nenhuma pergunta encontrada.");
+            }
             System.out.println("\n--- Perguntas ---");
             for (String q : questions)
                 System.out.println(q);
+        }
+    }
+    private void deleteQuestion() {
+        System.out.print("Código da pergunta a eliminar: ");
+        String code = scanner.nextLine();
+        Message response = sendRequestAndWait(new Message(Message.Type.DELETE_QUESTION, code));
+        if (response != null){
+            System.out.println(response.getContent());
+        }
+    }
+
+
+    private void showQuestionAnswers() {
+        System.out.print("Código da pergunta: ");
+        String code = scanner.nextLine();
+        Message response = sendRequestAndWait(new Message(Message.Type.GET_QUESTION_ANSWERS, code));
+
+        if (response != null && response.getType() == Message.Type.GET_QUESTION_ANSWERS_RESPONSE) {
+            @SuppressWarnings("unchecked")
+            List<String> report = (List<String>) response.getContent();
+            if (report == null) System.out.println("Pergunta não encontrada.");
+            else {
+                System.out.println("\n--- Respostas ---");
+                for (String line : report)
+                    System.out.println(line);
+            }
+        }
+    }
+
+
+    private void editQuestion() {
+        System.out.println("\n--- EDITAR PERGUNTA ---");
+        System.out.print("Codigo da pergunta a editar: ");
+        String accessCode = scanner.nextLine();
+
+        System.out.println("Insira os novos dados (deixe vazio para manter igual se implementasse logica complexa, aqui vamos pedir tudo de novo):");
+
+
+        String prompt;
+        while (true) {
+            System.out.print("Novo Enunciado: ");
+            prompt = scanner.nextLine();
+            if (!prompt.trim().isEmpty())
+                break;
+            System.out.println("O enunciado nao pode ser vazio.");
+        }
+
+
+        String options;
+        while (true) {
+            System.out.print("Novas Opcoes (pelo menos duas separadas por , ): ");
+            options = scanner.nextLine();
+            if (options.split(",").length >= 2)
+                break;
+            System.out.println("Digita pelo menos duas opcoes.");
+        }
+
+
+        String correctOption;
+        while (true) {
+            System.out.print("Novo Indice da resposta correta (inicia com 0): ");
+            correctOption = scanner.nextLine();
+            try {
+                int idx = Integer.parseInt(correctOption);
+                if (idx >= 0 && idx < options.split(",").length)
+                    break;
+                System.out.println("Indice invalido.");
+            } catch (NumberFormatException e) {
+                System.out.println("Input invalido, digita um numero.");
+            }
+        }
+
+
+        String startTime;
+        while (true) {
+            System.out.print("Nova Data e hora de inicio (YYYY-MM-DD HH:MM): ");
+            startTime = scanner.nextLine();
+            if (isValidDate(startTime))
+                break;
+            System.out.println("Formato invalido. Digita YYYY-MM-DD HH:MM");
+        }
+
+
+        String endTime;
+        while (true) {
+            System.out.print("Nova Data e hora do fim (YYYY-MM-DD HH:MM): ");
+            endTime = scanner.nextLine();
+            if (isValidDate(endTime)) {
+                if (isEndDateAfterStartDate(startTime, endTime))
+                    break;
+                else
+                    System.out.println("Data de fim deve ser depois da data de inicio.");
+            } else {
+                System.out.println("Formato invalido. Digita YYYY-MM-DD HH:MM");
+            }
+        }
+
+
+        Message response = sendRequestAndWait(new Message(Message.Type.EDIT_QUESTION, new String[] {
+                accessCode, prompt, options, correctOption, startTime, endTime
+        }));
+
+
+        if (response != null && response.getType() == Message.Type.EDIT_QUESTION_RESPONSE) {
+            boolean success = (boolean) response.getContent();
+            if (success) {
+                System.out.println("Pergunta editada com sucesso!");
+            } else {
+                System.out.println("Falha ao editar (Verifique se o codigo existe e se a pergunta ainda nao tem respostas).");
+            }
+        } else {
+            System.out.println("Erro de comunicacao ou resposta invalida.");
         }
     }
 

@@ -23,7 +23,13 @@ public class Message implements Serializable {
         DB_SYNC_REQUEST,
         DB_SYNC_RESPONSE,
         EXPORT_CSV,
-        EXPORT_CSV_RESPONSE
+        EXPORT_CSV_RESPONSE,
+        EDIT_QUESTION,
+        EDIT_QUESTION_RESPONSE,
+        DELETE_QUESTION,
+        DELETE_QUESTION_RESPONSE,
+        GET_QUESTION_ANSWERS,
+        GET_QUESTION_ANSWERS_RESPONSE
     }
 
     private Type type;

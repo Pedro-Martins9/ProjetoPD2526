@@ -80,7 +80,7 @@ public class ClientCommunication {
                         // Caso seja o mesmo servidor espera 20s até tentar novamente
                         Thread.sleep(20000);
                     } else {
-                        Thread.sleep(2000); // se for um servidor diferente espera 2s até tentar novamente
+                        Thread.sleep(5000); // se for um servidor diferente espera 5s até tentar novamente
                     }
 
                     if (connectToAddress(primary)) { //se conectar com sucesso
