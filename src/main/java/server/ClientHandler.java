@@ -34,17 +34,22 @@ public class ClientHandler implements Runnable {
             out = new ObjectOutputStream(socket.getOutputStream());
             in = new ObjectInputStream(socket.getInputStream());
 
+            //Avisar o servidor que este cliente entrou
+            server.addClient(this);
+
             while (!socket.isClosed()) {
                 Message request = (Message) in.readObject();
                 Message response = handleRequest(request);
-                out.writeObject(response);
-                out.flush();
+
+                sendMessage(response);
             }
         } catch (EOFException e) {
             // Client disconnected
         } catch (Exception e) {
             e.printStackTrace();
         } finally {
+            //Avisar o servidor que este cliente saiu
+            server.removeClient(this);
             try {
                 socket.close();
             } catch (IOException e) {
@@ -176,6 +181,10 @@ public class ClientHandler implements Runnable {
                 prompt, options, correctOption, startTime, endTime, accessCode, creatorEmail);
 
         server.executeUpdate(query);
+        // Notificar todos os alunos
+        String notificationMsg = "ATENÇÃO: Nova pergunta disponível -> " + data[0];
+        server.broadcast(new Message(Message.Type.NOTIFICATION, notificationMsg), this);
+
         return new Message(Message.Type.CREATE_QUESTION_RESPONSE, true);
     }
 
@@ -565,6 +574,18 @@ public class ClientHandler implements Runnable {
         } catch (Exception e) {
             e.printStackTrace();
             return 0;
+        }
+    }
+
+    // Metodo novo para evitar conflitos entre threads
+    public synchronized void sendMessage(Message msg) {
+        try {
+            if (!socket.isClosed() && out != null) {
+                out.writeObject(msg);
+                out.flush();
+            }
+        } catch (IOException e) {
+            // Se der erro, o servidor trata de remover o cliente depois
         }
     }
 }

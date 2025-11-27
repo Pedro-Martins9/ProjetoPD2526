@@ -409,7 +409,7 @@ public class ClientUI {
     private void showStudentMenu() {
         System.out.println("\n--- MENU ESTUDANTE ---");
         System.out.println("1. Responder a pergunta");
-        System.out.println("2. Consultar Histórico");
+        System.out.println("2. Consultar Historico");
         System.out.println("0. Logout");
 
         String opt = scanner.nextLine();
@@ -500,7 +500,7 @@ public class ClientUI {
                 System.out.println(line);
             }
         } else {
-            System.out.println("Erro ao obter histórico.");
+            System.out.println("Erro ao obter historico.");
         }
     }
 
@@ -519,4 +519,12 @@ public class ClientUI {
             return false;
         }
     }
+
+    public void showNotification(String msg) {
+        System.out.println("\n\n************************************************");
+        System.out.println("[NOTIFICACAO]: " + msg);
+        System.out.println("************************************************");
+        System.out.print("Opcao: "); // Volta a imprimir o prompt para não ficar estranho
+    }
+
 }

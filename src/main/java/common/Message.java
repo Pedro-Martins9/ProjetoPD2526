@@ -31,7 +31,8 @@ public class Message implements Serializable {
         GET_QUESTION_ANSWERS,
         GET_QUESTION_ANSWERS_RESPONSE,
         GET_STUDENT_HISTORY,
-        GET_STUDENT_HISTORY_RESPONSE
+        GET_STUDENT_HISTORY_RESPONSE,
+        NOTIFICATION
     }
 
     private Type type;

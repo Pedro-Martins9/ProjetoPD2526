@@ -14,6 +14,9 @@ public class Server {
     private AtomicBoolean running = new AtomicBoolean(true);
     private String dbPath;
 
+    // Lista thread-safe para guardar os clientes ativos
+    private final java.util.List<ClientHandler> activeClients = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+
     public static void main(String[] args) {
         if (args.length < 3) {
             System.out.println("Usage: java server.Server <db_path> <tcp_port> <sync_port>");
@@ -277,4 +280,27 @@ public class Server {
             e.printStackTrace();
         }
     }
+
+    public void addClient(ClientHandler client) {
+        activeClients.add(client);
+        System.out.println("Cliente conectado. Total: " + activeClients.size());
+    }
+
+    public void removeClient(ClientHandler client) {
+        activeClients.remove(client);
+        System.out.println("Cliente desconectado. Total: " + activeClients.size());
+    }
+
+    public void broadcast(common.Message msg, ClientHandler sender) {
+        synchronized (activeClients) { // Bloqueia a lista para iterar
+            for (ClientHandler client : activeClients) {
+                // Opcional: Podes verificar se o cliente é ALUNO antes de enviar
+                // if (client.isStudent()) ... (exige guardar o role no ClientHandler)
+                if (client != sender) {
+                    client.sendMessage(msg);
+                }
+            }
+        }
+    }
+
 }

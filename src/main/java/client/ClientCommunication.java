@@ -47,7 +47,15 @@ public class ClientCommunication {
         try {
             while (running && !socket.isClosed()) { //se o cliente e a socket estiverem ativos
                 Message msg = (Message) input.readObject(); // utiliza o input stream como buffer para ler a mensagem do servidor
-                ui.handleMessage(msg); // passa a mensagem para a interface do cliente
+
+                //Se for notificação, mostra direto e ignora a queue
+                if (msg.getType() == Message.Type.NOTIFICATION) {
+                    String text = (String) msg.getContent();
+                    ui.showNotification(text);
+                } else {
+                    // Comportamento normal (respostas a pedidos)
+                    ui.handleMessage(msg);
+                }
             }
         } catch (Exception e) { //se ocorrer um erro na leitura das mensagens
             if (running) {
