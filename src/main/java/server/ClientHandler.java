@@ -76,6 +76,8 @@ public class ClientHandler implements Runnable {
                     return handleDeleteQuestion((String) request.getContent());
                 case GET_QUESTION_ANSWERS:
                     return handleGetQuestionAnswers((String) request.getContent());
+                case GET_STUDENT_HISTORY:
+                    return handleGetStudentHistory((String[]) request.getContent());
                 default:
                     return new Message(Message.Type.LOGIN_RESPONSE, null);
             }
@@ -468,6 +470,67 @@ public class ClientHandler implements Runnable {
         if (report.isEmpty()) report.add("Sem respostas submetidas.");
 
         return new Message(Message.Type.GET_QUESTION_ANSWERS_RESPONSE, report);
+    }
+
+    private Message handleGetStudentHistory(String[] data) throws SQLException {
+        // data[0] = email, data[1] = filtro
+        String email = data[0];
+        String filter = data[1]; // "ALL", "CORRECT", "INCORRECT", "LAST_24H"
+
+        StringBuilder sql = new StringBuilder();
+        sql.append("SELECT q.prompt, q.options, q.correct_option, a.answer_index, a.timestamp ");
+        sql.append("FROM answers a ");
+        sql.append("JOIN questions q ON a.question_id = q.id ");
+        sql.append("WHERE a.student_email = ?");
+
+        // Apply Filters
+        if ("CORRECT".equals(filter)) {
+            sql.append(" AND a.answer_index = q.correct_option");
+        } else if ("INCORRECT".equals(filter)) {
+            sql.append(" AND a.answer_index != q.correct_option");
+        } else if ("LAST_24H".equals(filter)) {
+
+            long oneDayAgo = System.currentTimeMillis() - (24 * 60 * 60 * 1000);
+            sql.append(" AND a.timestamp >= ").append(oneDayAgo);
+        }
+
+        List<String> history = new ArrayList<>();
+
+        Connection conn = dbManager.getConnection();
+        try (PreparedStatement ps = conn.prepareStatement(sql.toString())) {
+            ps.setString(1, email);
+            ResultSet rs = ps.executeQuery();
+
+            while (rs.next()) {
+                String prompt = rs.getString("prompt");
+                int myAnswerIdx = rs.getInt("answer_index");
+                int correctIdx = rs.getInt("correct_option");
+                long timestamp = rs.getLong("timestamp");
+
+                boolean isCorrect = (myAnswerIdx == correctIdx);
+                String result = isCorrect ? "[CERTO]" : "[ERRADO]";
+
+                // Converter índice para letra (0 -> a, 1 -> b...)
+                char myAnswerChar = (char) ('a' + myAnswerIdx);
+                char correctChar = (char) ('a' + correctIdx);
+
+                // Formatar Data
+                String dateStr = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")
+                        .format(java.time.LocalDateTime.ofEpochSecond(timestamp / 1000, 0, java.time.ZoneOffset.UTC));
+
+                // Construir linha de resumo
+                String line = String.format("%s | %s | Sua resp: %c | Correta: %c | Data: %s",
+                        result, prompt, myAnswerChar, correctChar, dateStr);
+
+                history.add(line);
+            }
+        }
+
+        if (history.isEmpty()) {
+            history.add("Nenhum registo encontrado com esse filtro.");
+        }
+
+        return new Message(Message.Type.GET_STUDENT_HISTORY_RESPONSE, history);
     }
 
     private String hash(String input) {

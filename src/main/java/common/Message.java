@@ -29,7 +29,9 @@ public class Message implements Serializable {
         DELETE_QUESTION,
         DELETE_QUESTION_RESPONSE,
         GET_QUESTION_ANSWERS,
-        GET_QUESTION_ANSWERS_RESPONSE
+        GET_QUESTION_ANSWERS_RESPONSE,
+        GET_STUDENT_HISTORY,
+        GET_STUDENT_HISTORY_RESPONSE
     }
 
     private Type type;

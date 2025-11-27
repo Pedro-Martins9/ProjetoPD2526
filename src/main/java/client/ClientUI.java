@@ -132,7 +132,7 @@ public class ClientUI {
         String password = scanner.nextLine();
 
         String extra = ""; // obtem informação extra dependendo do tipo de utilizador codigo de professor ou numero de estudante
-        if ("Professor".equalsIgnoreCase(type)) {
+        if ("TEACHER".equalsIgnoreCase(type)) {
             System.out.print("Codigo de Professor: ");
             extra = scanner.nextLine();
         } else {
@@ -409,6 +409,7 @@ public class ClientUI {
     private void showStudentMenu() {
         System.out.println("\n--- MENU ESTUDANTE ---");
         System.out.println("1. Responder a pergunta");
+        System.out.println("2. Consultar Histórico");
         System.out.println("0. Logout");
 
         String opt = scanner.nextLine();
@@ -416,9 +417,13 @@ public class ClientUI {
             case "1":
                 answerQuestion();
                 break;
+            case "2":
+                checkHistory();
+                break;
             case "0":
                 userEmail = null;
                 break;
+
             default:
                 System.out.println("Digita uma opcao valida (1 ou 0).");
         }
@@ -468,6 +473,34 @@ public class ClientUI {
             }
         } else {
             System.out.println("Pergunta nao encontrada");
+        }
+    }
+
+    private void checkHistory() {
+        System.out.println("\n--- HISTORICO ---");
+        System.out.println("Filtro: 1. Tudo, 2. Apenas Certas, 3. Apenas Erradas, 4. Ultimas 24h");
+        String opt = scanner.nextLine();
+
+        String filter = "ALL";
+        if ("2".equals(opt)) filter = "CORRECT";
+        else if ("3".equals(opt)) filter = "INCORRECT";
+        else if ("4".equals(opt)) filter = "LAST_24H";
+
+        // Enviar pedido: [Email, Filtro]
+        Message response = sendRequestAndWait(
+                new Message(Message.Type.GET_STUDENT_HISTORY, new String[]{userEmail, filter})
+        );
+
+        if (response != null && response.getType() == Message.Type.GET_STUDENT_HISTORY_RESPONSE) {
+            @SuppressWarnings("unchecked")
+            List<String> history = (List<String>) response.getContent();
+
+            System.out.println("\n--- Resultados ---");
+            for (String line : history) {
+                System.out.println(line);
+            }
+        } else {
+            System.out.println("Erro ao obter histórico.");
         }
     }
 
