@@ -1,7 +1,13 @@
 @echo off
-TITLE Servico de Diretoria
-echo A iniciar a Diretoria na porta 5001...
+TITLE Diretoria PD
+echo A iniciar a Diretoria...
 echo.
-:: O classpath (-cp) inclui as classes compiladas e todos os jars na pasta lib
-"C:\Users\fabio\.jdks\openjdk-25.0.1\bin\java.exe" -cp target\classes;lib\* directory.DirectoryService
+
+if "%JAVA_HOME%" == "" (
+    echo JAVA_HOME não definido.
+    pause
+    exit
+)
+
+"%JAVA_HOME%\bin\java.exe" -cp target\classes;lib\* directory.DirectoryService
 pause

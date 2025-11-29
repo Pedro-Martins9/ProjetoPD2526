@@ -18,7 +18,6 @@ echo.
 echo A iniciar Servidor com: BD=%db% - TCP=%tcp% - SYNC=%sync%
 echo.
 
-:: Executa o servidor com os argumentos recolhidos
-:: (Altera o caminho dependendo de onde esta a pasta com o java.exe)
-"C:\Users\fabio\.jdks\openjdk-25.0.1\bin\java.exe" -cp target\classes;lib\* server.Server %db% %tcp% %sync%
+java -cp target\classes;lib\* server.Server %db% %tcp% %sync%
+
 pause
