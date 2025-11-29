@@ -4,7 +4,6 @@ echo.
 echo --- CONFIGURACAO DO SERVIDOR ---
 echo.
 
-:: Pergunta os argumentos ao utilizador (com valores padrao sugeridos)
 set /p db="Nome do ficheiro da BD (ex: servidor.db): "
 if "%db%"=="" set db=servidor.db
 
