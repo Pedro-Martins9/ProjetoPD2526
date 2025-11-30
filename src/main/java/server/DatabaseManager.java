@@ -3,6 +3,9 @@ package server;
 import java.sql.*;
 import java.io.File;
 
+/*
+Responsável pela gestão da base de dados
+*/
 public class DatabaseManager {
     private String dbPath;
     private Connection connection;
@@ -13,7 +16,7 @@ public class DatabaseManager {
     }
 
     public void connect() throws SQLException {
-        // Ensure directory exists
+        // abre ou cria ficheiro de base de dados
         File dbFile = new File(dbPath);
         if (dbFile.getParentFile() != null) {
             dbFile.getParentFile().mkdirs();
@@ -21,17 +24,17 @@ public class DatabaseManager {
 
         String url = "jdbc:sqlite:" + dbPath;
         connection = DriverManager.getConnection(url);
-        System.out.println("Connected to database: " + dbPath);
+        System.out.println("Base de dados iniciada: " + dbPath);
 
         initialize();
     }
 
     private void initialize() throws SQLException {
         try (Statement stmt = connection.createStatement()) {
-            // Config table for versioning
+            // cria tabela de configuração para gerir versões
             stmt.execute("CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT)");
 
-            // Check version
+            // verifica a versão
             ResultSet rs = stmt.executeQuery("SELECT value FROM config WHERE key = 'version'");
             if (rs.next()) {
                 dbVersion = Integer.parseInt(rs.getString("value"));
@@ -40,9 +43,7 @@ public class DatabaseManager {
                 dbVersion = 0;
             }
 
-            // Users (Teachers and Students)
-            // We can use a single table with a role or separate tables.
-            // Requirements mention "Docente" and "Estudante".
+            // cria tabela de users (docentes e estudantes)
             // Docente: name, email, password, hash_code
             // Estudante: id, name, email, password
 
@@ -50,16 +51,16 @@ public class DatabaseManager {
                     "email TEXT PRIMARY KEY, " +
                     "name TEXT NOT NULL, " +
                     "password TEXT NOT NULL, " +
-                    "role TEXT NOT NULL, " + // 'TEACHER' or 'STUDENT'
-                    "student_id TEXT, " + // Only for students
-                    "teacher_code_hash TEXT" + // Only for teachers
+                    "role TEXT NOT NULL, " + // docente ou estudante
+                    "student_id TEXT, " + // para estudantes
+                    "teacher_code_hash TEXT" + // para docentes
                     ")");
 
-            // Questions
+            // cria tabela de perguntas
             stmt.execute("CREATE TABLE IF NOT EXISTS questions (" +
                     "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
                     "prompt TEXT NOT NULL, " +
-                    "options TEXT NOT NULL, " + // JSON or delimited string
+                    "options TEXT NOT NULL, " +
                     "correct_option INTEGER NOT NULL, " +
                     "start_time INTEGER NOT NULL, " +
                     "end_time INTEGER NOT NULL, " +
@@ -68,7 +69,7 @@ public class DatabaseManager {
                     "FOREIGN KEY(creator_email) REFERENCES users(email)" +
                     ")");
 
-            // Answers
+            // cria tabela de respostas
             stmt.execute("CREATE TABLE IF NOT EXISTS answers (" +
                     "question_id INTEGER, " +
                     "student_email TEXT, " +
@@ -88,8 +89,6 @@ public class DatabaseManager {
     public synchronized void executeUpdate(String sql) throws SQLException {
         try (Statement stmt = connection.createStatement()) {
             stmt.execute(sql);
-
-            // Increment version
             dbVersion++;
             stmt.execute("UPDATE config SET value = '" + dbVersion + "' WHERE key = 'version'");
         }

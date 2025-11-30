@@ -2,10 +2,13 @@ package common;
 
 import java.io.Serializable;
 
+/*  
+    Classe auxiliar para facilitar a comunicação entre o cliente e o servidor
+ */
 public class Message implements Serializable {
     private static final long serialVersionUID = 1L;
 
-    public enum Type {
+    public enum Type { // diferentes tipos de mensagens
         LOGIN_REQUEST,
         LOGIN_RESPONSE,
         REGISTER_REQUEST,
@@ -35,8 +38,8 @@ public class Message implements Serializable {
         NOTIFICATION
     }
 
-    private Type type;
-    private Object content;
+    private Type type; // tipo da mensagem
+    private Object content; // conteudo da mensagem
 
     public Message(Type type, Object content) {
         this.type = type;

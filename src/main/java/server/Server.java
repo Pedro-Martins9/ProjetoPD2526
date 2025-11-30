@@ -14,12 +14,13 @@ public class Server {
     private AtomicBoolean running = new AtomicBoolean(true);
     private String dbPath;
 
-    // Lista thread-safe para guardar os clientes ativos
-    private final java.util.List<ClientHandler> activeClients = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+    // Lista para guardar os clientes ativos
+    private final java.util.List<ClientHandler> activeClients = java.util.Collections
+            .synchronizedList(new java.util.ArrayList<>());
 
     public static void main(String[] args) {
         if (args.length < 3) {
-            System.out.println("Usage: java server.Server <db_path> <tcp_port> <sync_port>");
+            System.out.println("Uso: java server.Server <db_path> <tcp_port> <sync_port>");
             return;
         }
         new Server(args[0], Integer.parseInt(args[1]), Integer.parseInt(args[2])).start();
@@ -36,30 +37,30 @@ public class Server {
         try {
             dbManager.connect();
 
-            // Check for existing Primary
+            // verifica se existe um servidor mais antigo
             String primaryInfo = getPrimaryFromDirectory();
 
             if (primaryInfo == null || primaryInfo.equals("NO_SERVERS")) {
-                System.out.println("No existing primary found. I am Primary.");
+                System.out.println("Nao existem mais servidores, este e o servidor principal");
                 isPrimary = true;
             } else {
-                // Format: SERVER <ip> <tcp_port> <sync_port>
+                // se existir um servidor principal
                 String[] parts = primaryInfo.split(" ");
                 String ip = parts[1];
                 int syncPort = Integer.parseInt(parts[3]);
-
-                System.out.println("Found Primary at " + ip + ":" + parts[2]);
+                // avisa o utilizador
+                System.out.println("Encontrado servidor principal em " + ip + ":" + parts[2]);
                 isPrimary = false;
-                syncDatabase(ip, syncPort);
+                syncDatabase(ip, syncPort); // copia a base de dados do servidor principal
             }
 
-            // Start threads
+            // inicia threads
             new Thread(this::sendHeartbeats).start();
             new Thread(this::listenMulticast).start();
             new Thread(this::listenSync).start();
             new Thread(this::listenClients).start();
 
-            // Keep main thread alive
+            // mantem thread principal a correr
             while (running.get()) {
                 Thread.sleep(1000);
             }
@@ -69,22 +70,23 @@ public class Server {
         }
     }
 
+    // funcao auxiliar para obter o servidor principal da diretoria
     private String getPrimaryFromDirectory() {
         try (DatagramSocket socket = new DatagramSocket()) {
             socket.setSoTimeout(2000);
-            String msg = "GET_SERVER";
+            String msg = "GET_SERVER"; // mensagem para obter o servidor principal da diretoria
             byte[] data = msg.getBytes();
-            DatagramPacket packet = new DatagramPacket(
+            DatagramPacket packet = new DatagramPacket( // cria e envia o packet
                     data, data.length, InetAddress.getByName("localhost"), Constants.DIRECTORY_SERVICE_UDP_PORT);
             socket.send(packet);
 
             byte[] buffer = new byte[1024];
-            DatagramPacket response = new DatagramPacket(buffer, buffer.length);
+            DatagramPacket response = new DatagramPacket(buffer, buffer.length); // packet para a resposta
             try {
                 socket.receive(response);
-                return new String(response.getData(), 0, response.getLength());
+                return new String(response.getData(), 0, response.getLength()); // devolve a resposta
             } catch (SocketTimeoutException e) {
-                // No response or timeout
+                // sem respota
             }
         } catch (IOException e) {
             e.printStackTrace();
@@ -92,25 +94,26 @@ public class Server {
         return null;
     }
 
+    // funcao auxiliar para sincronizar a base de dados
     private void syncDatabase(String ip, int port) {
-        System.out.println("Syncing database from " + ip + ":" + port);
+        System.out.println("A obter base de dados do servidor principal " + ip + ":" + port);
         try (Socket socket = new Socket(ip, port);
                 DataInputStream in = new DataInputStream(socket.getInputStream());
                 DataOutputStream out = new DataOutputStream(socket.getOutputStream())) {
 
-            out.writeUTF("SYNC_REQUEST");
+            out.writeUTF("SYNC_REQUEST"); // envia a pedido de sincronizacao ao servidor principal
 
             long fileSize = in.readLong();
             if (fileSize > 0) {
-                dbManager.close(); // Close DB to allow overwrite
+                dbManager.close(); // fecha a base de dados para conseguir escrever
 
-                // Backup existing DB if exists
+                // copia base de dados principal para backup
                 File currentDb = new File(dbManager.getDbPath());
                 if (currentDb.exists()) {
                     File backup = new File(dbManager.getDbPath() + ".bak");
                     currentDb.renameTo(backup);
                 }
-
+                // copia a base de dados do servidor principal
                 try (FileOutputStream fos = new FileOutputStream(dbManager.getDbPath())) {
                     byte[] buffer = new byte[4096];
                     long totalRead = 0;
@@ -122,8 +125,8 @@ public class Server {
                     }
                 }
 
-                dbManager.connect(); // Reopen DB
-                System.out.println("Database synced successfully.");
+                dbManager.connect(); // reabre a base de dados
+                System.out.println("Base de dados sincronizada com sucesso.");
             }
 
         } catch (Exception e) {
@@ -139,8 +142,8 @@ public class Server {
             InetAddress multicastGroup = InetAddress.getByName(Constants.MULTICAST_GROUP);
 
             while (running.get()) {
-                // 1. UDP to Directory Service
-                // Format: HEARTBEAT <tcp_port> <db_version> <sync_port>
+                // mensagem por udp para a diretoria
+                // Formato: HEARTBEAT <tcp_port> <db_version> <sync_port>
                 String msg = String.format("HEARTBEAT %d %d %d", tcpPort, dbManager.getDbVersion(), syncPort);
                 byte[] data = msg.getBytes();
 
@@ -148,7 +151,7 @@ public class Server {
                         data, data.length, directoryAddr, Constants.DIRECTORY_SERVICE_UDP_PORT);
                 udpSocket.send(packet);
 
-                // 2. Multicast to Cluster
+                // mensagem por multicast para o grupo
                 DatagramPacket multiPacket = new DatagramPacket(
                         data, data.length, multicastGroup, Constants.MULTICAST_PORT);
                 multicastSocket.send(multiPacket);
@@ -160,7 +163,7 @@ public class Server {
         }
     }
 
-    private void listenMulticast() {
+    private void listenMulticast() { // escuta por mensagens do grupo de servidores
         try (MulticastSocket socket = new MulticastSocket(Constants.MULTICAST_PORT)) {
             InetAddress group = InetAddress.getByName(Constants.MULTICAST_GROUP);
             NetworkInterface netIf = NetworkInterface.getByInetAddress(InetAddress.getLocalHost());
@@ -172,8 +175,8 @@ public class Server {
                 socket.receive(packet);
 
                 String msg = new String(packet.getData(), 0, packet.getLength());
-                if (msg.startsWith("UPDATE")) {
-                    handleDbUpdate(msg);
+                if (msg.startsWith("UPDATE")) { // se for uma mensagem de update
+                    handleDbUpdate(msg); // atualiza a base de dados
                 }
             }
         } catch (IOException e) {
@@ -181,13 +184,10 @@ public class Server {
         }
     }
 
-    private void handleDbUpdate(String msg) {
+    private void handleDbUpdate(String msg) { // funcao auxiliar para atualizar a base de dados
         if (isPrimary)
-            return; // Primary ignores its own updates (or we filter by sender)
-
-        // Parse UPDATE <version> <sql>
-        // msg = "UPDATE 5 INSERT INTO ..."
-        try {
+            return; // se for o servidor principal, ignora
+        try { // processa a mensagem de update formato UPDATE <versao> <sql>
             int firstSpace = msg.indexOf(' ');
             int secondSpace = msg.indexOf(' ', firstSpace + 1);
 
@@ -201,11 +201,11 @@ public class Server {
 
             if (version == localVersion + 1) {
                 System.out.println("Applying update version " + version);
-                dbManager.executeUpdate(sql); // This increments local version
+                dbManager.executeUpdate(sql); // aplica a atualizacao a base de dados local
             } else if (version > localVersion + 1) {
                 System.err.println(
-                        "Consistency lost! Missed updates (Local: " + localVersion + ", Remote: " + version + ").");
-                System.err.println("Shutting down as per consistency requirements.");
+                        "Atualizacoes perdidas (Local: " + localVersion + ", Remoto: " + version + ").");
+                System.err.println("Servidor encerrado.");
                 running.set(false);
                 System.exit(1);
             }
@@ -214,7 +214,7 @@ public class Server {
         }
     }
 
-    private void listenSync() {
+    private void listenSync() { // escuta por pedidos de sincronizacao
         try (ServerSocket serverSocket = new ServerSocket(syncPort)) {
             while (running.get()) {
                 Socket client = serverSocket.accept();
@@ -233,12 +233,12 @@ public class Server {
             if ("SYNC_REQUEST".equals(request)) {
                 File dbFile = new File(dbManager.getDbPath());
                 if (dbFile.exists()) {
-                    out.writeLong(dbFile.length());
+                    out.writeLong(dbFile.length()); // envia o tamanho do ficheiro
                     try (FileInputStream fis = new FileInputStream(dbFile)) {
                         byte[] buffer = new byte[4096];
                         int read;
                         while ((read = fis.read(buffer)) != -1) {
-                            out.write(buffer, 0, read);
+                            out.write(buffer, 0, read); // envia o ficheiro
                         }
                     }
                 } else {
@@ -250,7 +250,7 @@ public class Server {
         }
     }
 
-    private void listenClients() {
+    private void listenClients() { // funcao para escutar por clientes atraves do client handler
         try (ServerSocket serverSocket = new ServerSocket(tcpPort)) {
             while (running.get()) {
                 Socket client = serverSocket.accept();
@@ -263,11 +263,11 @@ public class Server {
 
     public synchronized void executeUpdate(String sql) {
         try {
-            // 1. Execute locally
+            // Atualiza a base de dados local
             dbManager.executeUpdate(sql);
 
-            // 2. Broadcast to cluster
-            // Format: UPDATE <version> <sql>
+            // envia mensagem de update para o grupo
+            // Formato: UPDATE <versao> <sql>
             String msg = "UPDATE " + dbManager.getDbVersion() + " " + sql;
             byte[] data = msg.getBytes();
 
@@ -291,11 +291,10 @@ public class Server {
         System.out.println("Cliente desconectado. Total: " + activeClients.size());
     }
 
+    // funcao para enviar mensagem para todos os clientes
     public void broadcast(common.Message msg, ClientHandler sender) {
-        synchronized (activeClients) { // Bloqueia a lista para iterar
+        synchronized (activeClients) { // bloqueia a lista para iterar
             for (ClientHandler client : activeClients) {
-                // Opcional: Podes verificar se o cliente é ALUNO antes de enviar
-                // if (client.isStudent()) ... (exige guardar o role no ClientHandler)
                 if (client != sender) {
                     client.sendMessage(msg);
                 }

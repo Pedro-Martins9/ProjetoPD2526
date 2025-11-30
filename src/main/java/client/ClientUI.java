@@ -10,6 +10,10 @@ import java.util.Scanner;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 
+/* 
+ Responsável pela interface do cliente
+
+*/
 public class ClientUI {
     private ClientCommunication comm; // instancia da camada de comunicação
     private Scanner scanner = new Scanner(System.in); // scanner para ler comandos do terminal
@@ -25,7 +29,7 @@ public class ClientUI {
     }
 
     public void start() {
-        comm = new ClientCommunication(this); //instancia a camada de comunicação
+        comm = new ClientCommunication(this); // instancia a camada de comunicação
         if (!comm.connect()) {
             System.out.println("Nao foi possivel conectar ao servidor.");
             return;
@@ -49,7 +53,8 @@ public class ClientUI {
 
     // recebe mensagens do ClientCommunication
     public void handleMessage(Message msg) {
-        // Adiciona qualquer mensagens à queue de respostas para ser processado posteriormente
+        // Adiciona qualquer mensagens à queue de respostas para ser processado
+        // posteriormente
         responseQueue.offer(msg);
     }
 
@@ -64,7 +69,7 @@ public class ClientUI {
 
     public void onFatalError(String msg) {
         System.out.println("Erro fatal: " + msg);
-        running = false; //termina o loop principal
+        running = false; // termina o loop principal
         System.exit(1);
     }
 
@@ -107,7 +112,9 @@ public class ClientUI {
         String password = scanner.nextLine();
 
         Message response = sendRequestAndWait( // envia pedido de login e espera pela resposta
-                new Message(Message.Type.LOGIN_REQUEST, new String[] { email, password })); // cria nova mensagem de login com email e password
+                new Message(Message.Type.LOGIN_REQUEST, new String[] { email, password })); // cria nova mensagem de
+                                                                                            // login com email e
+                                                                                            // password
 
         if (response != null && response.getType() == Message.Type.LOGIN_RESPONSE
                 && response.getContent() instanceof String) { // se a resposta for válida, de login e for uma string
@@ -131,7 +138,8 @@ public class ClientUI {
         System.out.print("Password: ");
         String password = scanner.nextLine();
 
-        String extra = ""; // obtem informação extra dependendo do tipo de utilizador codigo de professor ou numero de estudante
+        String extra = ""; // obtem informação extra dependendo do tipo de utilizador codigo de professor
+                           // ou numero de estudante
         if ("TEACHER".equalsIgnoreCase(type)) {
             System.out.print("Codigo de Professor: ");
             extra = scanner.nextLine();
@@ -142,7 +150,7 @@ public class ClientUI {
 
         Message response = sendRequestAndWait( // envia pedido de registo e espera pela resposta
                 new Message(Message.Type.REGISTER_REQUEST, new String[] { name, email, password, type, extra }));
-                // cria nova mensagem de registo com os detalhes do utilizador
+        // cria nova mensagem de registo com os detalhes do utilizador
 
         if (response != null && response.getType() == Message.Type.REGISTER_RESPONSE
                 && (boolean) response.getContent()) {
@@ -164,13 +172,28 @@ public class ClientUI {
 
         String opt = scanner.nextLine();
         switch (opt) {
-            case "1": createQuestion(); break;
-            case "2": listQuestions(); break;
-            case "3": editQuestion(); break;
-            case "4": deleteQuestion(); break;
-            case "5": showQuestionAnswers(); break;
-            case "6": exportCsv(); break;
-            case "0": userEmail = null; userRole = null; break;
+            case "1":
+                createQuestion();
+                break;
+            case "2":
+                listQuestions();
+                break;
+            case "3":
+                editQuestion();
+                break;
+            case "4":
+                deleteQuestion();
+                break;
+            case "5":
+                showQuestionAnswers();
+                break;
+            case "6":
+                exportCsv();
+                break;
+            case "0":
+                userEmail = null;
+                userRole = null;
+                break;
             default:
                 System.out.println("Digita uma opcao valida (1, 2, 3 ou 0).");
         }
@@ -233,7 +256,8 @@ public class ClientUI {
             }
         }
 
-        String accessCode = String.valueOf((int) (Math.random() * 9000) + 1000); // gera um código de acesso aleatório de 4 dígitos
+        String accessCode = String.valueOf((int) (Math.random() * 9000) + 1000); // gera um código de acesso aleatório
+                                                                                 // de 4 dígitos
         System.out.println("Codigo da pergunta: " + accessCode);
 
         Message response = sendRequestAndWait(new Message(Message.Type.CREATE_QUESTION, new String[] {
@@ -252,15 +276,18 @@ public class ClientUI {
         System.out.println("Filtro: 1. Todas, 2. Ativas, 3. Expiradas, 4. Futuras");
         String opt = scanner.nextLine();
         String filter = "ALL";
-        if (opt.equals("2")) filter = "ACTIVE";
-        else if (opt.equals("3")) filter = "EXPIRED";
-        else if (opt.equals("4")) filter = "FUTURE";
+        if (opt.equals("2"))
+            filter = "ACTIVE";
+        else if (opt.equals("3"))
+            filter = "EXPIRED";
+        else if (opt.equals("4"))
+            filter = "FUTURE";
 
         Message response = sendRequestAndWait(new Message(Message.Type.LIST_QUESTIONS, filter));
         if (response != null && response.getType() == Message.Type.LIST_QUESTIONS_RESPONSE) {
             @SuppressWarnings("unchecked")
             List<String> questions = (List<String>) response.getContent();
-            if (questions.isEmpty()){
+            if (questions.isEmpty()) {
                 System.out.println("Nenhuma pergunta encontrada.");
             }
             System.out.println("\n--- Perguntas ---");
@@ -268,15 +295,15 @@ public class ClientUI {
                 System.out.println(q);
         }
     }
+
     private void deleteQuestion() {
         System.out.print("Código da pergunta a eliminar: ");
         String code = scanner.nextLine();
         Message response = sendRequestAndWait(new Message(Message.Type.DELETE_QUESTION, code));
-        if (response != null){
+        if (response != null) {
             System.out.println(response.getContent());
         }
     }
-
 
     private void showQuestionAnswers() {
         System.out.print("Código da pergunta: ");
@@ -286,7 +313,8 @@ public class ClientUI {
         if (response != null && response.getType() == Message.Type.GET_QUESTION_ANSWERS_RESPONSE) {
             @SuppressWarnings("unchecked")
             List<String> report = (List<String>) response.getContent();
-            if (report == null) System.out.println("Pergunta não encontrada.");
+            if (report == null)
+                System.out.println("Pergunta não encontrada.");
             else {
                 System.out.println("\n--- Respostas ---");
                 for (String line : report)
@@ -295,14 +323,13 @@ public class ClientUI {
         }
     }
 
-
     private void editQuestion() {
         System.out.println("\n--- EDITAR PERGUNTA ---");
         System.out.print("Codigo da pergunta a editar: ");
         String accessCode = scanner.nextLine();
 
-        System.out.println("Insira os novos dados (deixe vazio para manter igual se implementasse logica complexa, aqui vamos pedir tudo de novo):");
-
+        System.out.println(
+                "Insira os novos dados (deixe vazio para manter igual se implementasse logica complexa, aqui vamos pedir tudo de novo):");
 
         String prompt;
         while (true) {
@@ -313,7 +340,6 @@ public class ClientUI {
             System.out.println("O enunciado nao pode ser vazio.");
         }
 
-
         String options;
         while (true) {
             System.out.print("Novas Opcoes (pelo menos duas separadas por , ): ");
@@ -322,7 +348,6 @@ public class ClientUI {
                 break;
             System.out.println("Digita pelo menos duas opcoes.");
         }
-
 
         String correctOption;
         while (true) {
@@ -338,7 +363,6 @@ public class ClientUI {
             }
         }
 
-
         String startTime;
         while (true) {
             System.out.print("Nova Data e hora de inicio (YYYY-MM-DD HH:MM): ");
@@ -347,7 +371,6 @@ public class ClientUI {
                 break;
             System.out.println("Formato invalido. Digita YYYY-MM-DD HH:MM");
         }
-
 
         String endTime;
         while (true) {
@@ -363,18 +386,17 @@ public class ClientUI {
             }
         }
 
-
         Message response = sendRequestAndWait(new Message(Message.Type.EDIT_QUESTION, new String[] {
                 accessCode, prompt, options, correctOption, startTime, endTime
         }));
-
 
         if (response != null && response.getType() == Message.Type.EDIT_QUESTION_RESPONSE) {
             boolean success = (boolean) response.getContent();
             if (success) {
                 System.out.println("Pergunta editada com sucesso!");
             } else {
-                System.out.println("Falha ao editar (Verifique se o codigo existe e se a pergunta ainda nao tem respostas).");
+                System.out.println(
+                        "Falha ao editar (Verifique se o codigo existe e se a pergunta ainda nao tem respostas).");
             }
         } else {
             System.out.println("Erro de comunicacao ou resposta invalida.");
@@ -482,14 +504,16 @@ public class ClientUI {
         String opt = scanner.nextLine();
 
         String filter = "ALL";
-        if ("2".equals(opt)) filter = "CORRECT";
-        else if ("3".equals(opt)) filter = "INCORRECT";
-        else if ("4".equals(opt)) filter = "LAST_24H";
+        if ("2".equals(opt))
+            filter = "CORRECT";
+        else if ("3".equals(opt))
+            filter = "INCORRECT";
+        else if ("4".equals(opt))
+            filter = "LAST_24H";
 
         // Enviar pedido: [Email, Filtro]
         Message response = sendRequestAndWait(
-                new Message(Message.Type.GET_STUDENT_HISTORY, new String[]{userEmail, filter})
-        );
+                new Message(Message.Type.GET_STUDENT_HISTORY, new String[] { userEmail, filter }));
 
         if (response != null && response.getType() == Message.Type.GET_STUDENT_HISTORY_RESPONSE) {
             @SuppressWarnings("unchecked")
@@ -507,9 +531,10 @@ public class ClientUI {
     private boolean isValidDate(String date) {
         return date.matches("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}");
     }
-    //funçao auxiliar utilizada para verificar se a data é valida
+    // funçao auxiliar utilizada para verificar se a data é valida
 
-    private boolean isEndDateAfterStartDate(String start, String end) { //funcao auxiliar para verificar se a data de fim é depois da data de inicio
+    private boolean isEndDateAfterStartDate(String start, String end) { // funcao auxiliar para verificar se a data de
+                                                                        // fim é depois da data de inicio
         try {
             DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
             LocalDateTime startDate = LocalDateTime.parse(start, formatter);
