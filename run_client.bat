@@ -4,7 +4,7 @@ echo A iniciar a Cliente...
 echo.
 
 if "%JAVA_HOME%" == "" (
-    echo JAVA_HOME não definido.
+    echo JAVA_HOME nao definido.
     pause
     exit
 )
