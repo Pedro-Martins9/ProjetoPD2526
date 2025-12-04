@@ -538,7 +538,7 @@ public class ClientUI {
 
     private void editProfile() {
         System.out.println("\n--- EDITAR PERFIL ---");
-        System.out.println("Pressione Enter sem escrever nada para manter o valor atual.");
+        System.out.println("(Deixe vazio para manter o valor atual)");
 
         System.out.print("Novo Nome: ");
         String newName = scanner.nextLine();
@@ -546,24 +546,43 @@ public class ClientUI {
         System.out.print("Nova Password: ");
         String newPass = scanner.nextLine();
 
-        if (newName.trim().isEmpty() && newPass.trim().isEmpty()) {
-            System.out.println("Nenhuma alteracao efetuada.");
+        System.out.print("Novo Email: ");
+        String newEmail = scanner.nextLine();
+
+        String newStudentId = "";
+        // Só pede número de estudante se for... estudante
+        if ("STUDENT".equalsIgnoreCase(userRole)) { // Tens de garantir que guardas o userRole no login
+            System.out.print("Novo Nº Estudante: ");
+            newStudentId = scanner.nextLine();
+        }
+
+        if (newName.isEmpty() && newPass.isEmpty() && newEmail.isEmpty() && newStudentId.isEmpty()) {
+            System.out.println("Cancelado: Nenhuma alteração inserida.");
             return;
         }
 
-        // Envia: [Email Atual, Novo Nome, Nova Password]
+        // Envia: [Email Atual, Novo Nome, Nova Pass, Novo Email, Novo ID]
         Message response = sendRequestAndWait(new Message(
                 Message.Type.EDIT_PROFILE,
-                new String[]{userEmail, newName, newPass}
+                new String[]{userEmail, newName, newPass, newEmail, newStudentId}
         ));
 
-        if (response != null &&
-                response.getType() == Message.Type.EDIT_PROFILE_RESPONSE &&
-                (boolean) response.getContent()) {
+        if (response != null && response.getType() == Message.Type.EDIT_PROFILE_RESPONSE) {
+            String result = (String) response.getContent();
 
-            System.out.println("Perfil atualizado com sucesso!");
-        } else {
-            System.out.println("Erro ao atualizar perfil.");
+            if ("SUCESSO".equals(result)) {
+                System.out.println("Perfil atualizado com sucesso!");
+
+                // IMPORTANTE: Se mudou o email, atualizar a variável local
+                if (!newEmail.isEmpty()) {
+                    this.userEmail = newEmail;
+                    System.out.println("O seu email de sessao foi atualizado.");
+                }
+            } else if ("EMAIL_DUPLICADO".equals(result)) {
+                System.out.println("Erro: Esse email ja está a ser utilizado por outro utilizador.");
+            } else {
+                System.out.println("Erro ao atualizar perfil.");
+            }
         }
     }
 

@@ -3,10 +3,7 @@ package server;
 import common.Message;
 import java.io.*;
 import java.net.Socket;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
+import java.sql.*;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
@@ -568,48 +565,100 @@ public class ClientHandler implements Runnable {
 
 
     private Message handleEditProfile(String[] data) throws SQLException {
-        // data: [email_atual, novo_nome, nova_password]
-        String email = normSql(data[0]);
+        // data: [email_antigo, novo_nome, nova_password, novo_email, novo_nr_estudante]
+        String oldEmail = data[0];
         String newName = normSql(data[1]);
         String newPass = normSql(data[2]);
+        String newEmail = normSql(data[3]);
+        String newStudentId = normSql(data[4]);
 
-        // Validar se o utilizador existe
-        String checkSql = "SELECT * FROM users WHERE email = ?";
         Connection conn = dbManager.getConnection();
-        try (PreparedStatement pstmt = conn.prepareStatement(checkSql)) {
-            pstmt.setString(1, email);
-            ResultSet rs = pstmt.executeQuery();
-            if (!rs.next()) {
-                return new Message(Message.Type.EDIT_PROFILE_RESPONSE, false);
+
+        // Verificar se o novo email já existe (se for diferente do antigo)
+        if (newEmail != null && !newEmail.isEmpty() && !newEmail.equals(oldEmail)) {
+            try (PreparedStatement check = conn.prepareStatement("SELECT email FROM users WHERE email = ?")) {
+                check.setString(1, newEmail);
+                if (check.executeQuery().next()) {
+                    System.out.println("Erro: O novo email já está em uso.");
+                    return new Message(Message.Type.EDIT_PROFILE_RESPONSE, "EMAIL_DUPLICADO");
+                }
             }
         }
 
-        // Construir a query de atualização
-        // Só atualizamos os campos que não estão vazios
-        StringBuilder sql = new StringBuilder("UPDATE users SET ");
-        boolean needsComma = false;
+        try {
+            // INICIA TRANSAÇÃO (Tudo ou nada)
+            conn.setAutoCommit(false);
 
-        if (newName != null && !newName.trim().isEmpty()) {
-            sql.append("name = '").append(newName).append("'");
-            needsComma = true;
+            // Construir query para atualizar a tabela USERS
+            StringBuilder sqlUser = new StringBuilder("UPDATE users SET ");
+            boolean first = true;
+
+            if (newName != null && !newName.isEmpty()) {
+                sqlUser.append("name = '").append(newName).append("'");
+                first = false;
+            }
+            if (newPass != null && !newPass.isEmpty()) {
+                if (!first) sqlUser.append(", ");
+                sqlUser.append("password = '").append(newPass).append("'");
+                first = false;
+            }
+            if (newStudentId != null && !newStudentId.isEmpty()) {
+                if (!first) sqlUser.append(", ");
+                sqlUser.append("student_id = '").append(newStudentId).append("'");
+                first = false;
+            }
+            // Atualiza o email por último na tabela users
+            if (newEmail != null && !newEmail.isEmpty() && !newEmail.equals(oldEmail)) {
+                if (!first) sqlUser.append(", ");
+                sqlUser.append("email = '").append(newEmail).append("'");
+            }
+
+            sqlUser.append(" WHERE email = '").append(oldEmail).append("'");
+
+            // Se houver algo para atualizar no user...
+            if (!first) {
+                try (Statement stmt = conn.createStatement()) {
+                    stmt.executeUpdate(sqlUser.toString());
+                }
+            }
+
+            // Atualização em Cascata (Se o email mudou)
+            if (newEmail != null && !newEmail.isEmpty() && !newEmail.equals(oldEmail)) {
+                // Atualizar quem criou as perguntas
+                String sqlQuestions = "UPDATE questions SET creator_email = ? WHERE creator_email = ?";
+                try (PreparedStatement pq = conn.prepareStatement(sqlQuestions)) {
+                    pq.setString(1, newEmail);
+                    pq.setString(2, oldEmail);
+                    pq.executeUpdate();
+                }
+
+                // Atualizar quem deu as respostas
+                String sqlAnswers = "UPDATE answers SET student_email = ? WHERE student_email = ?";
+                try (PreparedStatement pa = conn.prepareStatement(sqlAnswers)) {
+                    pa.setString(1, newEmail);
+                    pa.setString(2, oldEmail);
+                    pa.executeUpdate();
+                }
+
+                // Se mudámos o email, temos de avisar o resto do cluster (Servidores Backup)
+                // Para simplificar a sincronização multicast neste caso complexo:
+                String multicastFix = "UPDATE users SET email='"+newEmail+"' WHERE email='"+oldEmail+"'";
+                server.executeUpdate(multicastFix);
+            } else if (!first) {
+                // Se só mudou nome/pass, propaga normal
+                server.executeUpdate(sqlUser.toString());
+            }
+
+            conn.commit(); // CONFIRMA AS ALTERAÇÕES
+            conn.setAutoCommit(true); // Restaura modo normal
+
+            return new Message(Message.Type.EDIT_PROFILE_RESPONSE, "SUCESSO");
+
+        } catch (SQLException e) {
+            try { conn.rollback(); conn.setAutoCommit(true); } catch (SQLException ex) {} // Desfaz se der erro
+            e.printStackTrace();
+            return new Message(Message.Type.EDIT_PROFILE_RESPONSE, "ERRO_SQL");
         }
-
-        if (newPass != null && !newPass.trim().isEmpty()) {
-            if (needsComma) sql.append(", ");
-            sql.append("password = '").append(newPass).append("'");
-        }
-
-        sql.append(" WHERE email = '").append(email).append("'");
-
-        // Se não houver nada para atualizar
-        if (!needsComma && (newPass == null || newPass.trim().isEmpty())) {
-            return new Message(Message.Type.EDIT_PROFILE_RESPONSE, true); // Consideramos sucesso, mas não faz nada
-        }
-
-        // Executar no servidor (isto vai propagar para os outros servidores via executeUpdate)
-        server.executeUpdate(sql.toString());
-
-        return new Message(Message.Type.EDIT_PROFILE_RESPONSE, true);
     }
 
     private String hash(String input) { // funcao auxiliar para gerar um hash
