@@ -89,6 +89,8 @@ public class ClientHandler implements Runnable {
                     return handleGetQuestionAnswers((String) request.getContent());
                 case GET_STUDENT_HISTORY:
                     return handleGetStudentHistory((String[]) request.getContent());
+                case EDIT_PROFILE:
+                    return handleEditProfile((String[]) request.getContent());
                 default:
                     return new Message(Message.Type.LOGIN_RESPONSE, null);
             }
@@ -562,6 +564,52 @@ public class ClientHandler implements Runnable {
         }
 
         return new Message(Message.Type.GET_STUDENT_HISTORY_RESPONSE, history);
+    }
+
+
+    private Message handleEditProfile(String[] data) throws SQLException {
+        // data: [email_atual, novo_nome, nova_password]
+        String email = normSql(data[0]);
+        String newName = normSql(data[1]);
+        String newPass = normSql(data[2]);
+
+        // Validar se o utilizador existe
+        String checkSql = "SELECT * FROM users WHERE email = ?";
+        Connection conn = dbManager.getConnection();
+        try (PreparedStatement pstmt = conn.prepareStatement(checkSql)) {
+            pstmt.setString(1, email);
+            ResultSet rs = pstmt.executeQuery();
+            if (!rs.next()) {
+                return new Message(Message.Type.EDIT_PROFILE_RESPONSE, false);
+            }
+        }
+
+        // Construir a query de atualização
+        // Só atualizamos os campos que não estão vazios
+        StringBuilder sql = new StringBuilder("UPDATE users SET ");
+        boolean needsComma = false;
+
+        if (newName != null && !newName.trim().isEmpty()) {
+            sql.append("name = '").append(newName).append("'");
+            needsComma = true;
+        }
+
+        if (newPass != null && !newPass.trim().isEmpty()) {
+            if (needsComma) sql.append(", ");
+            sql.append("password = '").append(newPass).append("'");
+        }
+
+        sql.append(" WHERE email = '").append(email).append("'");
+
+        // Se não houver nada para atualizar
+        if (!needsComma && (newPass == null || newPass.trim().isEmpty())) {
+            return new Message(Message.Type.EDIT_PROFILE_RESPONSE, true); // Consideramos sucesso, mas não faz nada
+        }
+
+        // Executar no servidor (isto vai propagar para os outros servidores via executeUpdate)
+        server.executeUpdate(sql.toString());
+
+        return new Message(Message.Type.EDIT_PROFILE_RESPONSE, true);
     }
 
     private String hash(String input) { // funcao auxiliar para gerar um hash

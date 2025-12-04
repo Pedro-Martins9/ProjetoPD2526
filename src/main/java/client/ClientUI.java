@@ -168,6 +168,7 @@ public class ClientUI {
         System.out.println("4. Eliminar pergunta");
         System.out.println("5. Ver Respostas (Relatório)");
         System.out.println("6. Exportar CSV");
+        System.out.println("7. Editar Perfil");
         System.out.println("0. Logout");
 
         String opt = scanner.nextLine();
@@ -190,12 +191,15 @@ public class ClientUI {
             case "6":
                 exportCsv();
                 break;
+            case "7":
+                editProfile();
+                break;
             case "0":
                 userEmail = null;
                 userRole = null;
                 break;
             default:
-                System.out.println("Digita uma opcao valida (1, 2, 3 ou 0).");
+                System.out.println("Digita uma opcao valida (1, 2, 3, 4, 5, 6, 7 ou 0).");
         }
     }
 
@@ -432,6 +436,7 @@ public class ClientUI {
         System.out.println("\n--- MENU ESTUDANTE ---");
         System.out.println("1. Responder a pergunta");
         System.out.println("2. Consultar Historico");
+        System.out.println("3. Editar Perfil");
         System.out.println("0. Logout");
 
         String opt = scanner.nextLine();
@@ -442,12 +447,15 @@ public class ClientUI {
             case "2":
                 checkHistory();
                 break;
+            case "3":
+                editProfile();
+                break;
             case "0":
                 userEmail = null;
                 break;
 
             default:
-                System.out.println("Digita uma opcao valida (1 ou 0).");
+                System.out.println("Digita uma opcao valida (1, 2, 3 ou 0).");
         }
     }
 
@@ -525,6 +533,37 @@ public class ClientUI {
             }
         } else {
             System.out.println("Erro ao obter historico.");
+        }
+    }
+
+    private void editProfile() {
+        System.out.println("\n--- EDITAR PERFIL ---");
+        System.out.println("Pressione Enter sem escrever nada para manter o valor atual.");
+
+        System.out.print("Novo Nome: ");
+        String newName = scanner.nextLine();
+
+        System.out.print("Nova Password: ");
+        String newPass = scanner.nextLine();
+
+        if (newName.trim().isEmpty() && newPass.trim().isEmpty()) {
+            System.out.println("Nenhuma alteracao efetuada.");
+            return;
+        }
+
+        // Envia: [Email Atual, Novo Nome, Nova Password]
+        Message response = sendRequestAndWait(new Message(
+                Message.Type.EDIT_PROFILE,
+                new String[]{userEmail, newName, newPass}
+        ));
+
+        if (response != null &&
+                response.getType() == Message.Type.EDIT_PROFILE_RESPONSE &&
+                (boolean) response.getContent()) {
+
+            System.out.println("Perfil atualizado com sucesso!");
+        } else {
+            System.out.println("Erro ao atualizar perfil.");
         }
     }
 
