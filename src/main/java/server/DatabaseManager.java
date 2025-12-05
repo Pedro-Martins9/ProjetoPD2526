@@ -2,6 +2,7 @@ package server;
 
 import java.sql.*;
 import java.io.File;
+import java.util.List;
 
 /*
 Responsável pela gestão da base de dados
@@ -107,4 +108,40 @@ public class DatabaseManager {
     public String getDbPath() {
         return dbPath;
     }
+
+
+    // Classe auxiliar interna para transportar dados do timer
+    public static class QuestionTimerData {
+        public int id;
+        public String prompt;
+        public long startTime;
+        public long endTime;
+
+        public QuestionTimerData(int id, String prompt, long startTime, long endTime) {
+            this.id = id;
+            this.prompt = prompt;
+            this.startTime = startTime;
+            this.endTime = endTime;
+        }
+    }
+
+    public List<QuestionTimerData> getAllQuestionTimers() throws SQLException {
+        java.util.List<QuestionTimerData> list = new java.util.ArrayList<>();
+        String sql = "SELECT id, prompt, start_time, end_time FROM questions";
+
+        try (Statement stmt = connection.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+
+            while (rs.next()) {
+                list.add(new QuestionTimerData(
+                        rs.getInt("id"),
+                        rs.getString("prompt"),
+                        rs.getLong("start_time"),
+                        rs.getLong("end_time")
+                ));
+            }
+        }
+        return list;
+    }
 }
+

@@ -1,10 +1,13 @@
 package server;
 
 import common.Constants;
-import common.Constants;
 import java.io.*;
 import java.net.*;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.Set;
+import java.util.HashSet;
+import java.util.Collections;
 
 public class Server {
     private DatabaseManager dbManager;
@@ -17,6 +20,8 @@ public class Server {
     // Lista para guardar os clientes ativos
     private final java.util.List<ClientHandler> activeClients = java.util.Collections
             .synchronizedList(new java.util.ArrayList<>());
+
+    private final Set<Integer> activeQuestionIds = Collections.synchronizedSet(new HashSet<>());
 
     public static void main(String[] args) {
         if (args.length < 3) {
@@ -54,7 +59,19 @@ public class Server {
                 syncDatabase(ip, syncPort); // copia a base de dados do servidor principal
             }
 
+            long now = System.currentTimeMillis() / 1000;
+            try {
+                for (DatabaseManager.QuestionTimerData q : dbManager.getAllQuestionTimers()) {
+                    if (q.startTime <= now && q.endTime > now) {
+                        activeQuestionIds.add(q.id); // Marca como ativa silenciosamente
+                    }
+                }
+            } catch (Exception e) {
+                System.out.println("Erro ao carregar estado inicial dos timers: " + e.getMessage());
+            }
+
             // inicia threads
+            new Thread(this::checkTimers).start();
             new Thread(this::sendHeartbeats).start();
             new Thread(this::listenMulticast).start();
             new Thread(this::listenSync).start();
@@ -298,6 +315,47 @@ public class Server {
                 if (client != sender) {
                     client.sendMessage(msg);
                 }
+            }
+        }
+    }
+
+    private void checkTimers() {
+        System.out.println("Thread de verificacao temporal iniciada...");
+        while (running.get()) {
+            try {
+                // Obtém todas as perguntas
+                List<DatabaseManager.QuestionTimerData> questions = dbManager.getAllQuestionTimers();
+                long now = System.currentTimeMillis() / 1000;
+
+                for (DatabaseManager.QuestionTimerData q : questions) {
+                    boolean isActiveTime = (q.startTime <= now && q.endTime > now);
+                    boolean isExpiredTime = (q.endTime <= now);
+                    boolean wasActiveInMemory = activeQuestionIds.contains(q.id);
+
+                    // CASO 1: A pergunta acabou de entrar no horário de início
+                    if (isActiveTime && !wasActiveInMemory) {
+                        activeQuestionIds.add(q.id);
+                        String msg = "A pergunta '" + q.prompt + "' acabou de começar! Boa sorte.";
+                        System.out.println("[TIMER] Notificando inicio: " + q.prompt);
+                        // Envia para todos (passamos null no sender para ir para todos mesmo)
+                        broadcast(new common.Message(common.Message.Type.NOTIFICATION, msg), null);
+                    }
+
+                    // CASO 2: A pergunta acabou de expirar
+                    else if (isExpiredTime && wasActiveInMemory) {
+                        activeQuestionIds.remove(q.id);
+                        String msg = "A pergunta '" + q.prompt + "' terminou. O tempo esgotou-se.";
+                        System.out.println("[TIMER] Notificando fim: " + q.prompt);
+                        broadcast(new common.Message(common.Message.Type.NOTIFICATION, msg), null);
+                    }
+                }
+
+                // Verifica a cada 5 segundos
+                Thread.sleep(5000);
+
+            } catch (Exception e) {
+                System.err.println("Erro na thread de timer: " + e.getMessage());
+                try { Thread.sleep(5000); } catch (InterruptedException ex) {} // Espera antes de tentar de novo
             }
         }
     }
