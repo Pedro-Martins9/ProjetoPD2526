@@ -209,11 +209,11 @@ public class ClientHandler implements Runnable {
         long now = System.currentTimeMillis() / 1000;
 
         // define a query sql de acordo com o filtro
-        if ("ATUAL".equalsIgnoreCase(filter)) {
+        if ("ACTIVE".equalsIgnoreCase(filter)) {
             sql += " WHERE start_time <= " + now + " AND end_time >= " + now;
-        } else if ("EXPIRADO".equalsIgnoreCase(filter)) {
+        } else if ("EXPIRED".equalsIgnoreCase(filter)) {
             sql += " WHERE end_time < " + now;
-        } else if ("FUTURO".equalsIgnoreCase(filter)) {
+        } else if ("FUTURE".equalsIgnoreCase(filter)) {
             sql += " WHERE start_time > " + now;
         }
         List<String> questions = new ArrayList<>();
@@ -232,21 +232,35 @@ public class ClientHandler implements Runnable {
     }
 
     private Message handleGetQuestion(String accessCode) throws SQLException {
-        // devolve uma pergunta con base no seu codigo de acesso
+        // Alterado para buscar tempos também
         String sql = "SELECT * FROM questions WHERE access_code = ?";
         Connection conn = dbManager.getConnection();
 
         try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setString(1, accessCode); // codigo de acesso introduzido pelo utilizador
-            ResultSet rs = pstmt.executeQuery(); // executa a query
+            pstmt.setString(1, accessCode);
+            ResultSet rs = pstmt.executeQuery();
 
             if (rs.next()) {
+                // 1. Verificar tempos
+                long start = rs.getLong("start_time");
+                long end = rs.getLong("end_time");
+                long now = System.currentTimeMillis() / 1000;
+
+                if (now < start) {
+                    return new Message(Message.Type.GET_QUESTIONS_RESPONSE, "ERRO: A pergunta ainda nao comecou.");
+                }
+                if (now > end) {
+                    return new Message(Message.Type.GET_QUESTIONS_RESPONSE, "ERRO: A pergunta ja expirou.");
+                }
+
+                // 2. Se tudo estiver bem, envia os dados
                 String prompt = rs.getString("prompt");
                 String options = rs.getString("options");
                 return new Message(Message.Type.GET_QUESTIONS_RESPONSE, new String[] { prompt, options });
             }
-        } // devolve resultados
-        return new Message(Message.Type.GET_QUESTIONS_RESPONSE, null);
+        }
+        // Se não encontrou a pergunta
+        return new Message(Message.Type.GET_QUESTIONS_RESPONSE, "ERRO: Código de pergunta invalido.");
     }
 
     private Message handleSubmitAnswer(String[] data) throws SQLException {
@@ -255,21 +269,41 @@ public class ClientHandler implements Runnable {
         String answerIndex = data[1];
         String studentEmail = data[2];
 
-        String sqlId = "SELECT id FROM questions WHERE access_code = ?";
+        // 1. Obter ID e Tempos (Inicio e Fim) da pergunta
+        // Alterámos a query para ir buscar também o start_time e end_time
+        String sqlInfo = "SELECT id, start_time, end_time FROM questions WHERE access_code = ?";
         int questionId = -1;
+        long startTime = 0;
+        long endTime = 0;
 
         Connection conn = dbManager.getConnection();
-        try (PreparedStatement pstmt = conn.prepareStatement(sqlId)) {
-            pstmt.setString(1, accessCode); // codigo de acesso introduzido pelo utilizador
-            ResultSet rs = pstmt.executeQuery(); // executa a query
-            if (rs.next())
-                questionId = rs.getInt("id"); // id da pergunta com base no codigo de acesso
+        try (PreparedStatement pstmt = conn.prepareStatement(sqlInfo)) {
+            pstmt.setString(1, accessCode);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) {
+                questionId = rs.getInt("id");
+                startTime = rs.getLong("start_time");
+                endTime = rs.getLong("end_time");
+            }
         }
 
         if (questionId == -1) // verifica se o id da pergunta existe
             return new Message(Message.Type.SUBMIT_ANSWER_RESPONSE, false);
 
-        // verifica se o aluno ja respondeu a pergunta
+        // 2. VALIDAÇÃO TEMPORAL (NOVO)
+        long now = System.currentTimeMillis() / 1000; // Tempo atual em segundos
+
+        if (now < startTime) {
+            System.out.println("Recusado: A pergunta ainda não começou (" + studentEmail + ")");
+            return new Message(Message.Type.SUBMIT_ANSWER_RESPONSE, false);
+        }
+
+        if (now > endTime) {
+            System.out.println("Recusado: A pergunta já expirou (" + studentEmail + ")");
+            return new Message(Message.Type.SUBMIT_ANSWER_RESPONSE, false);
+        }
+
+        // 3. Verifica se o aluno ja respondeu a pergunta
         String checkSql = "SELECT * FROM answers WHERE question_id = ? AND student_email = ?";
         try (PreparedStatement pstmt = conn.prepareStatement(checkSql)) {
             pstmt.setInt(1, questionId);
@@ -280,13 +314,14 @@ public class ClientHandler implements Runnable {
                 return new Message(Message.Type.SUBMIT_ANSWER_RESPONSE, false);
             }
         }
-        // prepara a query para inserir a resposta
+
+        // 4. Insere a resposta
         String query = String.format(
                 "INSERT INTO answers (question_id, student_email, answer_index, timestamp) VALUES (%d, '%s', %s, %d)",
                 questionId, normSql(studentEmail), answerIndex, System.currentTimeMillis());
 
         server.executeUpdate(query); // executa a query
-        // devolve TRUE apenas quando a resposta é corretamente adicionada
+
         return new Message(Message.Type.SUBMIT_ANSWER_RESPONSE, true);
     }
 
@@ -415,44 +450,67 @@ public class ClientHandler implements Runnable {
     }
 
     private Message handleEditQuestion(String[] data) throws SQLException {
-        // Data: [codigo de acesso, enunciado, opcoes, opcao correta, startTime,
-        // endTime]
+        // data: [accessCode, prompt, options, correctOption, startTime, endTime]
         String accessCode = data[0];
 
-        // verifica se a pergunta existe
         Connection conn = dbManager.getConnection();
-        int questionId = -1;
-        try (PreparedStatement ps = conn.prepareStatement("SELECT id FROM questions WHERE access_code = ?")) {
+
+        // 1. Verificar se pergunta existe e obter dados atuais
+        int id = -1;
+        String currentPrompt = null, currentOptions = null;
+        int currentCorrect = -1;
+        long currentStart = 0, currentEnd = 0;
+
+        String selectSql = "SELECT * FROM questions WHERE access_code = ?";
+        try (PreparedStatement ps = conn.prepareStatement(selectSql)) {
             ps.setString(1, accessCode);
             ResultSet rs = ps.executeQuery();
-            if (rs.next())
-                questionId = rs.getInt("id");
+            if (rs.next()) {
+                id = rs.getInt("id");
+                currentPrompt = rs.getString("prompt");
+                currentOptions = rs.getString("options");
+                currentCorrect = rs.getInt("correct_option");
+                currentStart = rs.getLong("start_time");
+                currentEnd = rs.getLong("end_time");
+            } else {
+                return new Message(Message.Type.EDIT_QUESTION_RESPONSE, false); // Nao existe
+            }
         }
 
-        if (questionId == -1) // se a pergunta nao existir
-            return new Message(Message.Type.EDIT_QUESTION_RESPONSE, false);
-
-        // verifica se a pergunta tem respostas
+        // 2. Verificar se tem respostas (impede edicao se ja tiver)
         try (PreparedStatement ps = conn.prepareStatement("SELECT COUNT(*) FROM answers WHERE question_id = ?")) {
-            ps.setInt(1, questionId);
+            ps.setInt(1, id);
             ResultSet rs = ps.executeQuery();
             if (rs.next() && rs.getInt(1) > 0) {
-                // se a pergunta tiver respostas nao pode editar
                 return new Message(Message.Type.EDIT_QUESTION_RESPONSE, false);
             }
         }
-        // prepara variaveis para query de edicao
-        String prompt = normSql(data[1]);
-        String options = normSql(data[2]);
-        String correctOption = data[3];
-        long start = parseDateToTimestamp(data[4]);
-        long end = parseDateToTimestamp(data[5]);
 
-        String sql = String.format( // prepara query de edicao e preenche os valores
-                "UPDATE questions SET prompt='%s', options='%s', correct_option=%s, start_time=%d, end_time=%d WHERE id=%d",
-                prompt, options, correctOption, start, end, questionId);
+        // 3. Preparar novos valores (Lógica: Se vazio -> Mantém antigo)
+        String newPrompt = (data[1] == null || data[1].trim().isEmpty()) ? currentPrompt : normSql(data[1]);
+        String newOptions = (data[2] == null || data[2].trim().isEmpty()) ? currentOptions : normSql(data[2]);
 
-        server.executeUpdate(sql); // executa a query
+        int newCorrect = currentCorrect;
+        if (data[3] != null && !data[3].trim().isEmpty()) {
+            newCorrect = Integer.parseInt(data[3]);
+        }
+
+        long newStart = currentStart;
+        if (data[4] != null && !data[4].trim().isEmpty()) {
+            newStart = parseDateToTimestamp(data[4]);
+        }
+
+        long newEnd = currentEnd;
+        if (data[5] != null && !data[5].trim().isEmpty()) {
+            newEnd = parseDateToTimestamp(data[5]);
+        }
+
+        // 4. Executar Update
+        String updateSql = String.format(
+                "UPDATE questions SET prompt='%s', options='%s', correct_option=%d, start_time=%d, end_time=%d WHERE id=%d",
+                newPrompt, newOptions, newCorrect, newStart, newEnd, id);
+
+        server.executeUpdate(updateSql);
         return new Message(Message.Type.EDIT_QUESTION_RESPONSE, true);
     }
 

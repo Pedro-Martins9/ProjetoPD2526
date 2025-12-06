@@ -332,64 +332,63 @@ public class ClientUI {
         System.out.print("Codigo da pergunta a editar: ");
         String accessCode = scanner.nextLine();
 
-        System.out.println(
-                "Insira os novos dados (deixe vazio para manter igual se implementasse logica complexa, aqui vamos pedir tudo de novo):");
+        System.out.println("Insira os novos dados (deixe vazio para manter o valor atual):");
 
-        String prompt;
-        while (true) {
-            System.out.print("Novo Enunciado: ");
-            prompt = scanner.nextLine();
-            if (!prompt.trim().isEmpty())
-                break;
-            System.out.println("O enunciado nao pode ser vazio.");
-        }
+        // 1. Enunciado (Prompt)
+        System.out.print("Novo Enunciado: ");
+        String prompt = scanner.nextLine();
 
+        // 2. Opções
         String options;
         while (true) {
-            System.out.print("Novas Opcoes (pelo menos duas separadas por , ): ");
+            System.out.print("Novas Opcoes (separadas por , ): ");
             options = scanner.nextLine();
-            if (options.split(",").length >= 2)
+            // Se estiver vazio, aceita (mantém o antigo). Se tiver texto, valida se tem virgulas.
+            if (options.trim().isEmpty() || options.split(",").length >= 2) {
                 break;
-            System.out.println("Digita pelo menos duas opcoes.");
+            }
+            System.out.println("Se quiser alterar, digite pelo menos duas opcoes.");
         }
 
+        // 3. Opção Correta
         String correctOption;
         while (true) {
             System.out.print("Novo Indice da resposta correta (inicia com 0): ");
             correctOption = scanner.nextLine();
+            if (correctOption.trim().isEmpty()) break; // Aceita vazio
             try {
                 int idx = Integer.parseInt(correctOption);
-                if (idx >= 0 && idx < options.split(",").length)
-                    break;
+                if (idx >= 0) break; // Aceita numero valido (validar maximo seria ideal mas n temos as opcoes aqui)
                 System.out.println("Indice invalido.");
             } catch (NumberFormatException e) {
-                System.out.println("Input invalido, digita um numero.");
+                System.out.println("Input invalido, digite um numero ou Enter para manter.");
             }
         }
 
+        // 4. Data Inicio
         String startTime;
         while (true) {
             System.out.print("Nova Data e hora de inicio (YYYY-MM-DD HH:MM): ");
             startTime = scanner.nextLine();
-            if (isValidDate(startTime))
-                break;
-            System.out.println("Formato invalido. Digita YYYY-MM-DD HH:MM");
+            if (startTime.trim().isEmpty() || isValidDate(startTime)) break;
+            System.out.println("Formato invalido. Digite YYYY-MM-DD HH:MM");
         }
 
+        // 5. Data Fim
         String endTime;
         while (true) {
             System.out.print("Nova Data e hora do fim (YYYY-MM-DD HH:MM): ");
             endTime = scanner.nextLine();
-            if (isValidDate(endTime)) {
-                if (isEndDateAfterStartDate(startTime, endTime))
-                    break;
-                else
-                    System.out.println("Data de fim deve ser depois da data de inicio.");
-            } else {
-                System.out.println("Formato invalido. Digita YYYY-MM-DD HH:MM");
-            }
+            if (endTime.trim().isEmpty() || isValidDate(endTime)) break;
+            System.out.println("Formato invalido. Digite YYYY-MM-DD HH:MM");
         }
 
+        if (prompt.isEmpty() && options.isEmpty() && correctOption.isEmpty() && startTime.isEmpty() && endTime.isEmpty()) {
+            System.out.println("Nenhuma alteração solicitada. Operação cancelada.");
+            return;
+        }
+
+        // Envia tudo (mesmo o que estiver vazio) para o servidor tratar
         Message response = sendRequestAndWait(new Message(Message.Type.EDIT_QUESTION, new String[] {
                 accessCode, prompt, options, correctOption, startTime, endTime
         }));
@@ -399,11 +398,10 @@ public class ClientUI {
             if (success) {
                 System.out.println("Pergunta editada com sucesso!");
             } else {
-                System.out.println(
-                        "Falha ao editar (Verifique se o codigo existe e se a pergunta ainda nao tem respostas).");
+                System.out.println("Falha ao editar (Verifique o codigo ou se a pergunta ja tem respostas).");
             }
         } else {
-            System.out.println("Erro de comunicacao ou resposta invalida.");
+            System.out.println("Erro de comunicacao.");
         }
     }
 
@@ -466,43 +464,54 @@ public class ClientUI {
 
         Message response = sendRequestAndWait(new Message(Message.Type.GET_QUESTION, accessCode));
 
-        if (response != null && response.getType() == Message.Type.GET_QUESTIONS_RESPONSE
-                && response.getContent() != null) {
-            String[] data = (String[]) response.getContent();
-            String prompt = data[0];
-            String optionsStr = data[1];
-            String[] options = optionsStr.split(",");
+        if (response != null && response.getType() == Message.Type.GET_QUESTIONS_RESPONSE) {
+            Object content = response.getContent();
 
-            System.out.println("Pergunta: " + prompt);
-            for (int i = 0; i < options.length; i++) {
-                System.out.println(i + ": " + options[i].trim());
+            // CASO DE ERRO (Recebeu uma String simples com o aviso)
+            if (content instanceof String) {
+                System.out.println("❌ " + content); // Imprime: "ERRO: A pergunta já expirou."
+                return;
             }
 
-            String answerIndex;
-            while (true) {
-                System.out.print("Indice da resposta ( comeca com 0): ");
-                answerIndex = scanner.nextLine();
-                try {
-                    int idx = Integer.parseInt(answerIndex);
-                    if (idx >= 0 && idx < options.length)
-                        break;
-                    System.out.println("Indice invalido");
-                } catch (NumberFormatException e) {
-                    System.out.println("Input invalido, digita um numero.");
+            // CASO DE SUCESSO (Recebeu String[] com enunciado e opções)
+            if (content instanceof String[]) {
+                String[] data = (String[]) content;
+                String prompt = data[0];
+                String optionsStr = data[1];
+                // ... (O resto do código mantém-se igual daqui para baixo: split options, loop de resposta, etc.)
+                String[] options = optionsStr.split(",");
+
+                System.out.println("Pergunta: " + prompt);
+                for (int i = 0; i < options.length; i++) {
+                    System.out.println(i + ": " + options[i].trim());
+                }
+
+                String answerIndex;
+                while (true) {
+                    System.out.print("Indice da resposta ( comeca com 0): ");
+                    answerIndex = scanner.nextLine();
+                    try {
+                        int idx = Integer.parseInt(answerIndex);
+                        if (idx >= 0 && idx < options.length)
+                            break;
+                        System.out.println("Indice invalido");
+                    } catch (NumberFormatException e) {
+                        System.out.println("Input invalido, digita um numero.");
+                    }
+                }
+
+                Message submitResponse = sendRequestAndWait(
+                        new Message(Message.Type.SUBMIT_ANSWER, new String[] { accessCode, answerIndex, userEmail }));
+
+                if (submitResponse != null && submitResponse.getType() == Message.Type.SUBMIT_ANSWER_RESPONSE
+                        && (boolean) submitResponse.getContent()) {
+                    System.out.println("Resposta submetida!");
+                } else {
+                    System.out.println("Erro ao enviar resposta (Verifique se já respondeu ou se o tempo acabou).");
                 }
             }
-
-            Message submitResponse = sendRequestAndWait(
-                    new Message(Message.Type.SUBMIT_ANSWER, new String[] { accessCode, answerIndex, userEmail }));
-
-            if (submitResponse != null && submitResponse.getType() == Message.Type.SUBMIT_ANSWER_RESPONSE
-                    && (boolean) submitResponse.getContent()) {
-                System.out.println("Resposta submetida!");
-            } else {
-                System.out.println("Erro ao enviar resposta");
-            }
         } else {
-            System.out.println("Pergunta nao encontrada");
+            System.out.println("Erro de comunicação.");
         }
     }
 
