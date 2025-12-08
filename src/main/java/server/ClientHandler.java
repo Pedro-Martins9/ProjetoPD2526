@@ -125,48 +125,56 @@ public class ClientHandler implements Runnable {
     }
 
     private Message handleRegister(String[] data) throws SQLException {
-        // escape sql utilizado para normalizar o input do cliente
-        // prepara a string para ser usada na query
+        // data: [nome, email, password, role, extra]
         String name = normSql(data[0]);
         String email = normSql(data[1]);
         String password = normSql(data[2]);
         String role = normSql(data[3]);
 
+        // 1. Validar Email
         if (email == null || !email.contains("@")) {
-            System.out.println("Email invalido: " + email);
             return new Message(Message.Type.REGISTER_RESPONSE, false);
         }
+
+        // Verificar se já existe ---
+        Connection conn = dbManager.getConnection();
+        String checkSql = "SELECT email FROM users WHERE email = ?";
+        try (PreparedStatement check = conn.prepareStatement(checkSql)) {
+            check.setString(1, email);
+            if (check.executeQuery().next()) {
+                System.out.println("Tentativa de registo duplicado para: " + email);
+                return new Message(Message.Type.REGISTER_RESPONSE, false); // Retorna falha se já existir
+            }
+        }
+
 
         String studentId = null;
         String teacherCode = null;
 
         if ("STUDENT".equals(role)) {
             String rawId = data[4];
-            if (rawId == null || !rawId.matches("\\d+")) { // verifica se o id é um numero
-                System.out.println("Numero de aluno invalido: " + rawId);
+            if (rawId == null || !rawId.matches("\\d+")) {
                 return new Message(Message.Type.REGISTER_RESPONSE, false);
             }
             studentId = normSql(rawId);
         } else {
-            // se for professor valida o codigo
+            // Validação de Professor
             String inputCode = data[4].trim();
-            String hashedCode = hash(inputCode); // hash do codigo introduzido
-            // transforma o codigo esperado em hash
+            String hashedCode = hash(inputCode);
             String validHash = hash("PROFE123");
 
-            if (!validHash.equals(hashedCode)) { // compara os hashs dos codigos
-                System.out.println("Codigo invalido: " + inputCode);
+            if (!validHash.equals(hashedCode)) {
                 return new Message(Message.Type.REGISTER_RESPONSE, false);
             }
             teacherCode = hashedCode;
         }
 
-        String query = String.format( // prepara a query com os dados do utilizador
+        String query = String.format(
                 "INSERT INTO users (name, email, password, role, student_id, teacher_code_hash) VALUES ('%s', '%s', '%s', '%s', '%s', '%s')",
                 name, email, password, role, studentId != null ? studentId : "NULL",
                 teacherCode != null ? teacherCode : "NULL");
 
-        server.executeUpdate(query); // envia a query preparada para o servidor
+        server.executeUpdate(query);
         return new Message(Message.Type.REGISTER_RESPONSE, true);
     }
 
@@ -269,8 +277,7 @@ public class ClientHandler implements Runnable {
         String answerIndex = data[1];
         String studentEmail = data[2];
 
-        // 1. Obter ID e Tempos (Inicio e Fim) da pergunta
-        // Alterámos a query para ir buscar também o start_time e end_time
+        // Obter ID e Tempos (Inicio e Fim) da pergunta
         String sqlInfo = "SELECT id, start_time, end_time FROM questions WHERE access_code = ?";
         int questionId = -1;
         long startTime = 0;
@@ -290,7 +297,7 @@ public class ClientHandler implements Runnable {
         if (questionId == -1) // verifica se o id da pergunta existe
             return new Message(Message.Type.SUBMIT_ANSWER_RESPONSE, false);
 
-        // 2. VALIDAÇÃO TEMPORAL (NOVO)
+        // VALIDAÇÃO TEMPORAL
         long now = System.currentTimeMillis() / 1000; // Tempo atual em segundos
 
         if (now < startTime) {
@@ -303,7 +310,7 @@ public class ClientHandler implements Runnable {
             return new Message(Message.Type.SUBMIT_ANSWER_RESPONSE, false);
         }
 
-        // 3. Verifica se o aluno ja respondeu a pergunta
+        // Verifica se o aluno ja respondeu a pergunta
         String checkSql = "SELECT * FROM answers WHERE question_id = ? AND student_email = ?";
         try (PreparedStatement pstmt = conn.prepareStatement(checkSql)) {
             pstmt.setInt(1, questionId);
@@ -315,7 +322,7 @@ public class ClientHandler implements Runnable {
             }
         }
 
-        // 4. Insere a resposta
+        // Insere a resposta
         String query = String.format(
                 "INSERT INTO answers (question_id, student_email, answer_index, timestamp) VALUES (%d, '%s', %s, %d)",
                 questionId, normSql(studentEmail), answerIndex, System.currentTimeMillis());
@@ -455,7 +462,7 @@ public class ClientHandler implements Runnable {
 
         Connection conn = dbManager.getConnection();
 
-        // 1. Verificar se pergunta existe e obter dados atuais
+        // Verificar se pergunta existe e obter dados atuais
         int id = -1;
         String currentPrompt = null, currentOptions = null;
         int currentCorrect = -1;
@@ -477,7 +484,7 @@ public class ClientHandler implements Runnable {
             }
         }
 
-        // 2. Verificar se tem respostas (impede edicao se ja tiver)
+        // Verificar se tem respostas (impede edicao se ja tiver)
         try (PreparedStatement ps = conn.prepareStatement("SELECT COUNT(*) FROM answers WHERE question_id = ?")) {
             ps.setInt(1, id);
             ResultSet rs = ps.executeQuery();
@@ -486,7 +493,7 @@ public class ClientHandler implements Runnable {
             }
         }
 
-        // 3. Preparar novos valores (Lógica: Se vazio -> Mantém antigo)
+        // Preparar novos valores (Lógica: Se vazio -> Mantém antigo)
         String newPrompt = (data[1] == null || data[1].trim().isEmpty()) ? currentPrompt : normSql(data[1]);
         String newOptions = (data[2] == null || data[2].trim().isEmpty()) ? currentOptions : normSql(data[2]);
 
@@ -505,7 +512,7 @@ public class ClientHandler implements Runnable {
             newEnd = parseDateToTimestamp(data[5]);
         }
 
-        // 4. Executar Update
+        // Executar Update
         String updateSql = String.format(
                 "UPDATE questions SET prompt='%s', options='%s', correct_option=%d, start_time=%d, end_time=%d WHERE id=%d",
                 newPrompt, newOptions, newCorrect, newStart, newEnd, id);
@@ -573,15 +580,14 @@ public class ClientHandler implements Runnable {
         sql.append("WHERE a.student_email = ?");
 
         // Aplica os filtros
-        if ("CORRETO".equalsIgnoreCase(filter)) {
+        if ("CORRECT".equalsIgnoreCase(filter)) {
             sql.append(" AND a.answer_index = q.correct_option");
-        } else if ("INCORRETO".equalsIgnoreCase(filter)) {
+        } else if ("INCORRECT".equalsIgnoreCase(filter)) {
             sql.append(" AND a.answer_index != q.correct_option");
-        } else if ("ULTIMAS_24H".equalsIgnoreCase(filter)) {
+        } else if ("LAST_24H".equalsIgnoreCase(filter)) {
             long oneDayAgo = System.currentTimeMillis() - (24 * 60 * 60 * 1000);
             sql.append(" AND a.timestamp >= ").append(oneDayAgo);
         }
-
         List<String> history = new ArrayList<>(); // cria lista para armazenar o historico
 
         Connection conn = dbManager.getConnection();
@@ -673,7 +679,7 @@ public class ClientHandler implements Runnable {
 
             sqlUser.append(" WHERE email = '").append(oldEmail).append("'");
 
-            // Se houver algo para atualizar no user...
+
             if (!first) {
                 try (Statement stmt = conn.createStatement()) {
                     stmt.executeUpdate(sqlUser.toString());
@@ -698,16 +704,14 @@ public class ClientHandler implements Runnable {
                     pa.executeUpdate();
                 }
 
-                // Se mudámos o email, temos de avisar o resto do cluster (Servidores Backup)
-                // Para simplificar a sincronização multicast neste caso complexo:
+                // Se mudarmos o email, temos de avisar o resto do cluster (Servidores Backup)
                 String multicastFix = "UPDATE users SET email='"+newEmail+"' WHERE email='"+oldEmail+"'";
                 server.executeUpdate(multicastFix);
             } else if (!first) {
-                // Se só mudou nome/pass, propaga normal
                 server.executeUpdate(sqlUser.toString());
             }
 
-            conn.commit(); // CONFIRMA AS ALTERAÇÕES
+            conn.commit();
             conn.setAutoCommit(true); // Restaura modo normal
 
             return new Message(Message.Type.EDIT_PROFILE_RESPONSE, "SUCESSO");
@@ -754,7 +758,7 @@ public class ClientHandler implements Runnable {
         }
     }
 
-    // metodo para enviar mensagens
+
     public synchronized void sendMessage(Message msg) {
         try {
             if (!socket.isClosed() && out != null) {

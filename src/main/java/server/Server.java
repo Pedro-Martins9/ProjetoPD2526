@@ -337,7 +337,7 @@ public class Server {
                         activeQuestionIds.add(q.id);
                         String msg = "A pergunta '" + q.prompt + "' acabou de começar! Boa sorte.";
                         System.out.println("[TIMER] Notificando inicio: " + q.prompt);
-                        // Envia para todos (passamos null no sender para ir para todos mesmo)
+                        // Envia para todos
                         broadcast(new common.Message(common.Message.Type.NOTIFICATION, msg), null);
                     }
 

@@ -280,12 +280,21 @@ public class ClientUI {
         System.out.println("Filtro: 1. Todas, 2. Ativas, 3. Expiradas, 4. Futuras");
         String opt = scanner.nextLine();
         String filter = "ALL";
-        if (opt.equals("2"))
-            filter = "ACTIVE";
-        else if (opt.equals("3"))
-            filter = "EXPIRED";
-        else if (opt.equals("4"))
-            filter = "FUTURE";
+
+        switch (opt) {
+            case "2":
+                filter = "ACTIVE";
+                break;
+            case "3":
+                filter = "EXPIRED";
+                break;
+            case "4":
+                filter = "FUTURE";
+                break;
+            default:
+                filter = "ALL";
+                break;
+        }
 
         Message response = sendRequestAndWait(new Message(Message.Type.LIST_QUESTIONS, filter));
         if (response != null && response.getType() == Message.Type.LIST_QUESTIONS_RESPONSE) {
@@ -301,7 +310,7 @@ public class ClientUI {
     }
 
     private void deleteQuestion() {
-        System.out.print("Código da pergunta a eliminar: ");
+        System.out.print("Codigo da pergunta a eliminar: ");
         String code = scanner.nextLine();
         Message response = sendRequestAndWait(new Message(Message.Type.DELETE_QUESTION, code));
         if (response != null) {
@@ -310,7 +319,7 @@ public class ClientUI {
     }
 
     private void showQuestionAnswers() {
-        System.out.print("Código da pergunta: ");
+        System.out.print("Codigo da pergunta: ");
         String code = scanner.nextLine();
         Message response = sendRequestAndWait(new Message(Message.Type.GET_QUESTION_ANSWERS, code));
 
@@ -318,7 +327,7 @@ public class ClientUI {
             @SuppressWarnings("unchecked")
             List<String> report = (List<String>) response.getContent();
             if (report == null)
-                System.out.println("Pergunta não encontrada.");
+                System.out.println("Pergunta nao encontrada.");
             else {
                 System.out.println("\n--- Respostas ---");
                 for (String line : report)
@@ -334,11 +343,11 @@ public class ClientUI {
 
         System.out.println("Insira os novos dados (deixe vazio para manter o valor atual):");
 
-        // 1. Enunciado (Prompt)
+        // Enunciado
         System.out.print("Novo Enunciado: ");
         String prompt = scanner.nextLine();
 
-        // 2. Opções
+        // Opções
         String options;
         while (true) {
             System.out.print("Novas Opcoes (separadas por , ): ");
@@ -350,7 +359,7 @@ public class ClientUI {
             System.out.println("Se quiser alterar, digite pelo menos duas opcoes.");
         }
 
-        // 3. Opção Correta
+        // Opção Correta
         String correctOption;
         while (true) {
             System.out.print("Novo Indice da resposta correta (inicia com 0): ");
@@ -365,7 +374,7 @@ public class ClientUI {
             }
         }
 
-        // 4. Data Inicio
+        // Data Inicio
         String startTime;
         while (true) {
             System.out.print("Nova Data e hora de inicio (YYYY-MM-DD HH:MM): ");
@@ -374,7 +383,7 @@ public class ClientUI {
             System.out.println("Formato invalido. Digite YYYY-MM-DD HH:MM");
         }
 
-        // 5. Data Fim
+        // Data Fim
         String endTime;
         while (true) {
             System.out.print("Nova Data e hora do fim (YYYY-MM-DD HH:MM): ");
@@ -469,7 +478,7 @@ public class ClientUI {
 
             // CASO DE ERRO (Recebeu uma String simples com o aviso)
             if (content instanceof String) {
-                System.out.println("❌ " + content); // Imprime: "ERRO: A pergunta já expirou."
+                System.out.println(content); // Imprime: "ERRO: A pergunta já expirou."
                 return;
             }
 
@@ -478,7 +487,6 @@ public class ClientUI {
                 String[] data = (String[]) content;
                 String prompt = data[0];
                 String optionsStr = data[1];
-                // ... (O resto do código mantém-se igual daqui para baixo: split options, loop de resposta, etc.)
                 String[] options = optionsStr.split(",");
 
                 System.out.println("Pergunta: " + prompt);
@@ -507,11 +515,11 @@ public class ClientUI {
                         && (boolean) submitResponse.getContent()) {
                     System.out.println("Resposta submetida!");
                 } else {
-                    System.out.println("Erro ao enviar resposta (Verifique se já respondeu ou se o tempo acabou).");
+                    System.out.println("Erro ao enviar resposta (Verifique se ja respondeu ou se o tempo acabou).");
                 }
             }
         } else {
-            System.out.println("Erro de comunicação.");
+            System.out.println("Erro de comunicacao.");
         }
     }
 
@@ -559,8 +567,8 @@ public class ClientUI {
         String newEmail = scanner.nextLine();
 
         String newStudentId = "";
-        // Só pede número de estudante se for... estudante
-        if ("STUDENT".equalsIgnoreCase(userRole)) { // Tens de garantir que guardas o userRole no login
+
+        if ("STUDENT".equalsIgnoreCase(userRole)) {
             System.out.print("Novo Nº Estudante: ");
             newStudentId = scanner.nextLine();
         }
@@ -582,7 +590,6 @@ public class ClientUI {
             if ("SUCESSO".equals(result)) {
                 System.out.println("Perfil atualizado com sucesso!");
 
-                // IMPORTANTE: Se mudou o email, atualizar a variável local
                 if (!newEmail.isEmpty()) {
                     this.userEmail = newEmail;
                     System.out.println("O seu email de sessao foi atualizado.");
@@ -616,7 +623,7 @@ public class ClientUI {
         System.out.println("\n\n************************************************");
         System.out.println("[NOTIFICACAO]: " + msg);
         System.out.println("************************************************");
-        System.out.print("Opcao: "); // Volta a imprimir o prompt para não ficar estranho
+        System.out.print("Opcao: ");
     }
 
 }
